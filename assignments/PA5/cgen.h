@@ -42,10 +42,24 @@ private:
    void install_classes(Classes cs);
    void build_inheritance_tree();
    void set_relations(CgenNodeP nd);
+
+   /** 我的代码开始 */
+   int get_class_tag(Symbol name);
+   void code_prototype_obj();
+   // std::stack<CgenNodeP> get_parent_node(CgenNodeP node_p);
+   void code_class_name_tab();
+   void code_class_obj_tab();
+   void code_dispath_tabs();
+   void code_class_method();
+   void code_class_init();
+   /** 我的代码结束 */
 public:
    CgenClassTable(Classes, ostream& str);
    void code();
    CgenNodeP root();
+   /** 我的代码开始 */
+   CgenNodeP get_node_by_class(Symbol class_name);
+   /** 我的代码结束 */
 };
 
 

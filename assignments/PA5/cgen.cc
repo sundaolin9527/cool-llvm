@@ -21,12 +21,24 @@
 // fill in the rest.
 //
 //**************************************************************
+/*mycode begin*/
+#include <vector>
+#include <stack>
+#include <unordered_map>
+#include <algorithm>
+/*mycode end*/
 
 #include "cgen.h"
 #include "cgen_gc.h"
 
 extern void emit_string_constant(ostream& str, char *s);
 extern int cgen_debug;
+
+/*mycode begin*/
+// 定义全局变量
+CgenClassTable* global_class_table= nullptr;
+Symbol global_self_type;
+/*mycode end*/
 
 //
 // Three symbols from the semantic analyzer (semant.cc) are used.
@@ -403,6 +415,10 @@ void StringEntry::code_def(ostream& s, int stringclasstag)
 
 
  /***** Add dispatch information for class String ******/
+      /** 我的代码开始 */
+      Symbol string  = idtable.lookup_string(STRINGNAME);
+      emit_disptable_ref(string, s);
+      /** 我的代码结束 */
 
       s << endl;                                              // dispatch table
       s << WORD;  lensym->code_ref(s);  s << endl;            // string length
@@ -445,6 +461,10 @@ void IntEntry::code_def(ostream &s, int intclasstag)
       << WORD; 
 
  /***** Add dispatch information for class Int ******/
+      /** 我的代码开始 */
+      Symbol integer = idtable.lookup_string(INTNAME);
+      emit_disptable_ref(integer, s);
+      /** 我的代码结束 */
 
       s << endl;                                          // dispatch table
       s << WORD << str << endl;                           // integer value
@@ -489,6 +509,10 @@ void BoolConst::code_def(ostream& s, int boolclasstag)
       << WORD;
 
  /***** Add dispatch information for class Bool ******/
+      /** 我的代码开始 */
+      Symbol boolc   = idtable.lookup_string(BOOLNAME);
+      emit_disptable_ref(boolc, s);
+      /** 我的代码结束 */
 
       s << endl;                                            // dispatch table
       s << WORD << val << endl;                             // value (0 or 1)
@@ -619,15 +643,18 @@ void CgenClassTable::code_constants()
 
 CgenClassTable::CgenClassTable(Classes classes, ostream& s) : nds(NULL) , str(s)
 {
-   stringclasstag = 0 /* Change to your String class tag here */;
-   intclasstag =    0 /* Change to your Int class tag here */;
-   boolclasstag =   0 /* Change to your Bool class tag here */;
-
    enterscope();
    if (cgen_debug) cout << "Building CgenClassTable" << endl;
    install_basic_classes();
    install_classes(classes);
    build_inheritance_tree();
+
+   /** 我的代码开始 */
+   stringclasstag = get_class_tag(Str);
+   intclasstag = get_class_tag(Int);
+   boolclasstag = get_class_tag(Bool);
+   global_class_table = this;
+   /** 我的代码结束 */
 
    code();
    exitscope();
@@ -816,6 +843,305 @@ void CgenNode::set_parentnd(CgenNodeP p)
 }
 
 
+/** 我的代码开始 */
+//  获取某个类节点所有的父节点，包括自身
+static std::stack<CgenNodeP> get_parent_node(CgenNodeP node_ptr){
+  std::stack<CgenNodeP> node_stack;
+  while(node_ptr->get_name() != No_class){
+    node_stack.push(node_ptr);
+    node_ptr = node_ptr->get_parentnd();
+  }
+  return node_stack;
+}
+
+int CgenClassTable::get_class_tag(Symbol name){
+  for(List<CgenNode> *l = nds; l; l = l->tl()){
+    CgenNode* node_ptr = l->hd();
+    // Symbl是一个指向entry的指针
+    if(node_ptr->get_name() == name){
+      return list_length(l) - 1;
+    }
+  }
+  return -1;
+}
+
+// 生成class_name表
+void CgenClassTable::code_class_name_tab(){
+  str << CLASSNAMETAB << LABEL;
+  std::stack<CgenNodeP> node_stack;
+  for(List<CgenNode> *l = nds; l; l = l->tl()){
+    node_stack.push(l->hd());
+  }
+  while(!node_stack.empty()){
+    CgenNodeP node = node_stack.top();
+    node_stack.pop();
+    str << WORD;
+    stringtable.lookup_string(node->get_name()->get_string())->code_ref(str);
+    str << endl;
+  }
+}
+
+// 生成class的pro obj和init方法表格
+void CgenClassTable::code_class_obj_tab(){
+  str << CLASSOBJTAB << LABEL;
+  std::stack<CgenNodeP> node_stack;
+  for(List<CgenNode> *l = nds; l; l = l->tl()){
+    node_stack.push(l->hd());
+  }
+  while(!node_stack.empty()){
+    CgenNodeP node = node_stack.top();
+    node_stack.pop();
+    str << WORD;
+    emit_protobj_ref(node->get_name(), str);
+    str << endl;
+    str << WORD;
+    emit_init_ref(node->get_name(), str);
+    str << endl;
+  }
+}
+
+// 怎么设计这个proj的layout关键在于copy或者init怎么使用？并且要保证后续的引用是正确的
+// 继承时重新定义的同名属性怎么处理，parser和semant报错
+// 这里是ID : TYPE [ <- expr ]不给定expr的值的
+void CgenClassTable::code_prototype_obj(){
+  for(List<CgenNode> *l = nds; l; l = l->tl()){
+    // 生成这个类genNode的pro_obj
+    std::stack<CgenNodeP> node_stack = get_parent_node(l->hd());
+    std::vector<Symbol> type_decls;
+    while(!node_stack.empty()){
+      // 找到这个类所有feature中的formal，即类成员变量
+      CgenNodeP node_ptr = node_stack.top();
+      node_stack.pop();
+      Features features = node_ptr->features;
+      for(int i = features->first(); features->more(i); i = features->next(i)){
+        Feature feature = features->nth(i);
+        attr_class* attr= dynamic_cast<attr_class*>(feature);
+        if(attr){
+          // 找到是attr的feature
+          type_decls.push_back(attr->type_decl);
+        }
+      }
+    }
+
+    Symbol name = l->hd()->get_name();
+    int classtag = list_length(l) - 1;
+    int obj_size = DEFAULT_OBJFIELDS + type_decls.size();
+
+    // 生成pro_obj代码
+    // Add -1 eye catcher
+    str << WORD << "-1" << endl;
+    emit_protobj_ref(name, str); str << LABEL;
+    str << WORD << classtag << endl;
+    str << WORD << obj_size << endl;
+    str << WORD; emit_disptable_ref(name, str); str << endl; 
+    for(auto type_decl : type_decls){
+      str << WORD;
+      if(type_decl == Str){
+        // 地址指向的是一样的，idtable的add_string函数回西安搜索判断是否存在。
+        // 这也说明了parser和semant阶段的共用变量，怎么做到的？
+        // str << "type_decl" <<(void*)type_decl << ", Str: " << (void*)Str;
+        stringtable.lookup_string("")->code_ref(str);
+      }else if(type_decl == Bool){
+        falsebool.code_ref(str);
+      }else if(type_decl == Int){
+        inttable.lookup_string("0")->code_ref(str);
+      }else{
+        str << 0;
+      }
+      str << endl; 
+    }
+  }
+}
+
+static void get_methods_info(CgenNode* node, std::unordered_map<Symbol, Symbol>& method_map, std::vector<Symbol>& method_names){
+  std::stack<CgenNodeP> node_stack = get_parent_node(node);
+  // 可能需要重写父类的方法
+  while(!node_stack.empty()){
+      CgenNodeP current_node = node_stack.top();
+      node_stack.pop();
+      Features features = current_node->features;
+      for(int i = features->first(); features->more(i); i = features->next(i)){
+        Feature feature = features->nth(i);
+        method_class* method= dynamic_cast<method_class*>(feature);
+        if(method){
+         if (method_map.find(method->name) == method_map.end()) {
+            method_names.push_back(method->name);
+          }
+          method_map[method->name] = current_node->get_name();
+        }
+      }
+    }
+}
+
+// 为每个类建立一个dispatch_table
+void CgenClassTable::code_dispath_tabs(){
+  for(List<CgenNode> *l = nds; l; l = l->tl()){
+    CgenNodeP node = l->hd();
+    emit_disptable_ref(node->get_name(), str); str << LABEL;
+    // 生成这个类所有方法的表格
+    std::unordered_map<Symbol, Symbol> method_map;
+    std::vector<Symbol> method_names;
+    get_methods_info(node, method_map, method_names);
+    for (const auto& method_name : method_names) {
+      str << WORD;
+      emit_method_ref(method_map[method_name], method_name, str);
+      str << endl; 
+    }
+  }
+}
+
+// 函数定义中，为body表达式生成代码前的代码
+// 对于runtime调用main函数是怎么样的？是否存在不一致，会不会又影响
+// frame如下
+//  (参数an，...,参数a1)，(存放调用这个函数的$fp), (调用者的对象s0) [返回调用者代码的地址], 方括号表示应该存入此值，但是还在寄存器中
+// 如果是这样的，那么在函数调用时需要push fp，push s0，并且把s0已移动到a0当中
+static void emit_func_def_begin(ostream &s){
+  // 将fp指向参数a1的下一个位置
+  emit_addiu(FP,SP,8,s);
+  // 将ra指针压栈
+  emit_push(RA, s);
+}
+
+
+// 函数body结束后恢复栈
+static void emit_func_def_end(ostream &s, int param_num){
+  // 恢复ra，s0 和fp
+  emit_load(FP,3,SP,s);
+  emit_load(SELF,2,SP,s);
+  emit_load(RA,1,SP,s);
+  emit_addiu(SP,SP,12 + 4*(param_num),s);
+  emit_return(s);
+}
+
+// 在函数调用参数如栈后，跳转前需要完成的操作
+// 将fp，s0压栈。此时a0中是需要跳转的类，移动到s0当中
+static void emit_func_ref_after_param(ostream &s){
+  emit_push(FP, s);
+  emit_push(SELF, s);
+  emit_move(SELF, ACC, s);
+}
+
+static int get_cgen_attr_num(CgenNode* node, attr_class* attr)
+{
+  std::stack<CgenNodeP> node_stack = get_parent_node(node);
+  int size = 0;
+  while(!node_stack.empty()){
+    CgenNodeP current_node = node_stack.top();
+    node_stack.pop();
+    Features features = current_node->features;
+    for(int i = features->first(); features->more(i); i = features->next(i)){
+      Feature feature = features->nth(i);
+      attr_class* current_attr= dynamic_cast<attr_class*>(feature);
+      if(current_attr){
+        size ++;
+        if(node == current_node && attr == current_attr){
+          return size;
+        }
+      }
+    }
+  }
+  return size;
+}
+
+// 生成类的init函数
+// init可以看作没有参数的调用
+// Todo:!!假设调用时帧已经准备好，s0保存在帧中。新的s0也已经给定。todo，需要验证
+// Todo:!!且init函数不考虑返回值
+void CgenClassTable::code_class_init(){
+  for(List<CgenNode> *l = nds; l; l = l->tl())
+  {
+    CgenNodeP node = l->hd();
+    emit_init_ref(node->get_name(), str); str << LABEL;
+
+    emit_func_def_begin(str);
+
+    // 找到所有父类，先执行它的init函数
+    auto parent_node = node->get_parentnd();
+    if((parent_node->name != No_class)){
+      emit_func_ref_after_param(str);
+      // 进行函数调用时，s0可以不变。子类也可以看作是父类
+      str << JAL; emit_init_ref(parent_node->get_name(), str); str << endl;
+    }
+    
+    // Todo:!! 验证init函数中有函数调用形式
+    global_self_type = node->name;
+    // 处理自身的init方法
+    Features features = node->features;
+    for(int i = features->first(); features->more(i); i = features->next(i))
+    {
+      Feature feature = features->nth(i);
+      attr_class* attr= dynamic_cast<attr_class*>(feature);
+      if(attr != nullptr)
+      {
+        if(dynamic_cast<no_expr_class*>(attr->init) == nullptr)
+        {
+          // !!注意此处有可能设计init可以引用的变量时哪些
+          attr->init->code(str);
+          // 将表达式初始化后的值，复制到对象的相应位置
+          emit_store(ACC, DEFAULT_OBJFIELDS + get_cgen_attr_num(node, attr) - 1, SELF, str);
+        }
+      }
+    }
+
+    emit_func_def_end(str, 0);
+  }
+}
+
+// 生成类的函数
+void CgenClassTable::code_class_method()
+{
+  for(List<CgenNode> *l = nds; l; l = l->tl())
+  {
+    CgenNodeP node = l->hd();
+    if(node->basic())
+    {
+      continue;
+    }
+
+    // 在执行函数体的时候，SELF_TYPE就是指的包含这个的类
+    global_self_type = node->name;
+    Features features = node->features;
+    for(int i = features->first(); features->more(i); i = features->next(i))
+    {
+      Feature feature = features->nth(i);
+      method_class* method= dynamic_cast<method_class*>(feature);
+      if(method != nullptr)
+      {
+        emit_method_ref(node->name ,method->name, str);
+        str << LABEL;
+        emit_func_def_begin(str);
+        method->expr->code(str);
+        emit_func_def_end(str, method->formals->len());
+      }
+    }
+  }
+}
+
+
+CgenNodeP CgenClassTable::get_node_by_class(Symbol class_name){
+  for(List<CgenNode> *l = nds; l; l = l->tl())
+  {
+    CgenNodeP node = l->hd();
+    if(node->name == class_name){
+      return node;
+    }
+  }
+  return nullptr;
+}
+
+// 根据类名，函数名，找到在dispath table中的位置
+int get_func_offset(Symbol class_name, Symbol func_name, CgenClassTable* global_class_table){
+  auto node = global_class_table->get_node_by_class(class_name);
+  std::unordered_map<Symbol, Symbol> method_map;
+  std::vector<Symbol> method_names;
+  get_methods_info(node, method_map, method_names);
+  // method_names是按照循序存入的函数名
+  auto it = std::find(method_names.begin(), method_names.end(), func_name);
+  return (it != method_names.end()) ? std::distance(method_names.begin(), it) : -1;
+}
+
+/** 我的代码结束 */
+
 
 void CgenClassTable::code()
 {
@@ -834,6 +1160,13 @@ void CgenClassTable::code()
 //                   - dispatch tables
 //
 
+  /** 我的代码开始 */
+  code_class_name_tab();
+  code_class_obj_tab();
+  code_prototype_obj();
+  code_dispath_tabs();
+  /** 我的代码结束 */
+
   if (cgen_debug) cout << "coding global text" << endl;
   code_global_text();
 
@@ -841,6 +1174,11 @@ void CgenClassTable::code()
 //                   - object initializer
 //                   - the class methods
 //                   - etc...
+
+/** 我的代码开始 */
+code_class_init();
+code_class_method();
+/** 我的代码结束 */
 
 }
 
@@ -884,6 +1222,34 @@ void static_dispatch_class::code(ostream &s) {
 }
 
 void dispatch_class::code(ostream &s) {
+  /** 我的代码开始 */
+  // 类成员变量和函数参数同名时，引用的是函数参数
+  // 先计算参数表达式，再计算e0调用者的表达式
+  // 最关键的是怎么引用栈内的变量，类里面的变量
+  for(int i = actual->first(); actual->more(i); i = actual->next(i)){
+    Expression expr = actual->nth(i);
+    expr->code(s);
+    // 此时结果在ACC中，压栈
+    emit_push(ACC, s);
+  }
+  expr->code(s);
+  // 完成寄存器保存，s0替换
+  emit_func_ref_after_param(s);
+  // 查找特定的函数然后跳转，s0替换后
+  // expr有特定的类型type。这个是语义分析时给定的。这个类型应该是实际类型或者其父类。
+  // Todo：找到cool语言中type是实际的父类的时候
+  Symbol class_name = expr->get_type();
+  if(class_name == SELF_TYPE){
+    class_name = global_self_type;
+  }
+  Symbol func_name = name;
+  // 求函数在dispatch table中的便宜，从0开始，单位是1
+  int func_offset = get_func_offset(class_name, func_name, global_class_table);
+  // $a0偏移8个位置就是dispatch table pointer,这里应该可以使用ACC作为目标寄存器
+  emit_load(T1, 2, ACC, s);
+  emit_load(T1, func_offset, T1, s);
+  emit_jalr(T1, s);
+  /** 我的代码结束 */
 }
 
 void cond_class::code(ostream &s) {
