@@ -991,15 +991,16 @@ void CgenClassTable::code_dispath_tabs(){
 }
 
 // 函数定义中，为body表达式生成代码前的代码
-// 对于runtime调用main函数是怎么样的？是否存在不一致，会不会又影响
-// frame如下
-//  (参数an，...,参数a1)，(存放调用这个函数的$fp), (调用者的对象s0) [返回调用者代码的地址], 方括号表示应该存入此值，但是还在寄存器中
-// 如果是这样的，那么在函数调用时需要push fp，push s0，并且把s0已移动到a0当中
+// 对于runtime调用main函数是怎么样的？是否存在不一致，会不会又影响。--> 有影响，需要变更,fram修改后如下
+//  (参数an，...,参数a1)，[存放调用这个函数的$fp], [调用者的对象s0] [返回调用者代码的地址], 方括号表示应该存入此值，但是还在寄存器中
+// 如果是这样的，那么在函数调用时需要push fp，push s0，并且把a0已移动到s0当中  --> 修改为定义时push。调用时s0暂时不能变
 static void emit_func_def_begin(ostream &s){
-  // 将fp指向参数a1的下一个位置
-  emit_addiu(FP,SP,8,s);
-  // 将ra指针压栈
-  emit_push(RA, s);
+  emit_addiu(SP,SP,-12,s);
+  emit_store(FP,3,SP,s);
+  emit_store(SELF,2,SP,s);
+  emit_store(RA,1,SP,s);
+  emit_addiu(FP,SP,12,s);
+  emit_move(SELF, ACC, s);
 }
 
 
@@ -1014,12 +1015,12 @@ static void emit_func_def_end(ostream &s, int param_num){
 }
 
 // 在函数调用参数如栈后，跳转前需要完成的操作
-// 将fp，s0压栈。此时a0中是需要跳转的类，移动到s0当中
-static void emit_func_ref_after_param(ostream &s){
-  emit_push(FP, s);
-  emit_push(SELF, s);
-  emit_move(SELF, ACC, s);
-}
+// 将fp，s0压栈。此时a0中是需要跳转的类，移动到s0当中   --> 这个函数修改为空
+// static void emit_func_ref_after_param(ostream &s){
+//   // emit_push(FP, s);
+//   // emit_push(SELF, s);
+//   // emit_move(SELF, ACC, s);
+// }
 
 static int get_cgen_attr_num(CgenNode* node, attr_class* attr)
 {
@@ -1058,7 +1059,7 @@ void CgenClassTable::code_class_init(){
     // 找到所有父类，先执行它的init函数
     auto parent_node = node->get_parentnd();
     if((parent_node->name != No_class)){
-      emit_func_ref_after_param(str);
+      // emit_func_ref_after_param(str);
       // 进行函数调用时，s0可以不变。子类也可以看作是父类
       str << JAL; emit_init_ref(parent_node->get_name(), str); str << endl;
     }
@@ -1233,8 +1234,8 @@ void dispatch_class::code(ostream &s) {
     emit_push(ACC, s);
   }
   expr->code(s);
-  // 完成寄存器保存，s0替换
-  emit_func_ref_after_param(s);
+  // 完成寄存器保存，s0替换 --> ar变化，取消
+  // emit_func_ref_after_param(s);
   // 查找特定的函数然后跳转，s0替换后
   // expr有特定的类型type。这个是语义分析时给定的。这个类型应该是实际类型或者其父类。
   // Todo：找到cool语言中type是实际的父类的时候
@@ -1245,7 +1246,7 @@ void dispatch_class::code(ostream &s) {
   Symbol func_name = name;
   // 求函数在dispatch table中的便宜，从0开始，单位是1
   int func_offset = get_func_offset(class_name, func_name, global_class_table);
-  // $a0偏移8个位置就是dispatch table pointer,这里应该可以使用ACC作为目标寄存器
+  // $a0偏移8个位置就是dispatch table pointer,这里应该可以使用ACC作为目标寄存器 --> 这里不能使用s0，使用ACC，ok
   emit_load(T1, 2, ACC, s);
   emit_load(T1, func_offset, T1, s);
   emit_jalr(T1, s);
@@ -1322,6 +1323,12 @@ void no_expr_class::code(ostream &s) {
 }
 
 void object_class::code(ostream &s) {
+  // 这里使用名称还是类型，和semant有关。需要考虑是不是唯一
+  if(name->equal_string("self", 4))
+  {
+    // 把当前对象的地址移动到$a0中
+    emit_move(ACC, SELF, s);
+  }
 }
 
 
