@@ -44,7 +44,6 @@ private:
    void set_relations(CgenNodeP nd);
 
    /** 我的代码开始 */
-   int get_class_tag(Symbol name);
    void code_prototype_obj();
    // std::stack<CgenNodeP> get_parent_node(CgenNodeP node_p);
    void code_class_name_tab();
@@ -58,6 +57,7 @@ public:
    void code();
    CgenNodeP root();
    /** 我的代码开始 */
+   int get_class_tag(Symbol name);
    CgenNodeP get_node_by_class(Symbol class_name);
    /** 我的代码结束 */
 };

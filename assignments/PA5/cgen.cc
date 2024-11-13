@@ -38,6 +38,10 @@ extern int cgen_debug;
 // 定义全局变量
 CgenClassTable* global_class_table= nullptr;
 Symbol global_self_type;
+std::unordered_map<Symbol, int> global_param_pos;
+int global_labal = 0;
+// frame为（fp）(s0)(ra), fp指向第一个位置
+int global_let_pos = -3;
 /*mycode end*/
 
 //
@@ -1047,7 +1051,7 @@ static int get_cgen_attr_num(CgenNode* node, attr_class* attr)
 // 生成类的init函数
 // init可以看作没有参数的调用
 // Todo:!!假设调用时帧已经准备好，s0保存在帧中。新的s0也已经给定。todo，需要验证
-// Todo:!!且init函数不考虑返回值
+// Todo:!!且init函数不考虑返回值  --> 考虑返回值
 void CgenClassTable::code_class_init(){
   for(List<CgenNode> *l = nds; l; l = l->tl())
   {
@@ -1083,7 +1087,8 @@ void CgenClassTable::code_class_init(){
         }
       }
     }
-
+    // init的返回值是自身。main进入函数时，和dispatch进入函数时一样，会假设a0是self。如果这样实现，那么需要更新a0。
+    emit_move(ACC, SELF, str);
     emit_func_def_end(str, 0);
   }
 }
@@ -1111,7 +1116,14 @@ void CgenClassTable::code_class_method()
         emit_method_ref(node->name ,method->name, str);
         str << LABEL;
         emit_func_def_begin(str);
+        // 进入函数定义后，需要找到formal中参数名和位置的映射
+        Formals formals = method->formals;
+        for(int i = formals->first(); formals->more(i); i = formals->next(i)){
+          formal_class* formal = dynamic_cast<formal_class*>(formals->nth(i));
+          global_param_pos[formal->name] = formals->len() - i;
+        }
         method->expr->code(str);
+        global_param_pos.clear();
         emit_func_def_end(str, method->formals->len());
       }
     }
@@ -1139,6 +1151,43 @@ int get_func_offset(Symbol class_name, Symbol func_name, CgenClassTable* global_
   // method_names是按照循序存入的函数名
   auto it = std::find(method_names.begin(), method_names.end(), func_name);
   return (it != method_names.end()) ? std::distance(method_names.begin(), it) : -1;
+}
+
+// 根据类名，变量名，找到在类实体中的位置
+int get_var_offset(Symbol class_name, Symbol var_name, CgenClassTable* global_class_table){
+  auto node = global_class_table->get_node_by_class(class_name);
+  std::stack<CgenNodeP> node_stack = get_parent_node(node);
+  int offset = 0;
+  while(!node_stack.empty()){
+    // 找到这个类所有feature中的formal，即类成员变量
+    CgenNodeP node_ptr = node_stack.top();
+    node_stack.pop();
+    Features features = node_ptr->features;
+    for(int i = features->first(); features->more(i); i = features->next(i)){
+      Feature feature = features->nth(i);
+      attr_class* attr= dynamic_cast<attr_class*>(feature);
+      if(attr){
+        if(attr->name == var_name){
+          return offset;
+        }else{
+          offset++;
+        }
+      }
+    }
+  }
+  return -1;
+}
+
+static void emit_judge_void(ostream& s, Symbol class_name, int line_number, char* jump_addr){
+  emit_bne(ACC, ZERO, global_labal, s);
+  // trap.handler中的_dispatch_abort函数期望a0存放函数名，t1存放代码行数
+  auto node = global_class_table->get_node_by_class(class_name);
+  Symbol file_name = node->get_filename();
+  emit_load_string(ACC, stringtable.lookup_string(file_name->get_string()), s);
+  emit_load_imm(T1, line_number, s);
+  s << JAL << jump_addr << endl;
+  emit_label_ref(global_labal, s); s << LABEL;
+  global_labal++;
 }
 
 /** 我的代码结束 */
@@ -1217,9 +1266,39 @@ CgenNode::CgenNode(Class_ nd, Basicness bstatus, CgenClassTableP ct) :
 //*****************************************************************
 
 void assign_class::code(ostream &s) {
+  /** 我的代码开始 */
+  // Todo:验证左边不可能是self
+  // 赋值表达式的值就是右边的值
+  expr->code(s);
+  if(global_param_pos.find(name) != global_param_pos.end()){
+    int pos = global_param_pos[name];
+    emit_store(ACC, pos, FP, s);
+    return;
+  }
+  
+  int var_offset = get_var_offset(global_self_type, name, global_class_table);
+  if(var_offset != -1){
+    emit_store(ACC, DEFAULT_OBJFIELDS + var_offset, SELF, s);
+    return;
+  }
+  /** 我的代码开始 */
 }
 
 void static_dispatch_class::code(ostream &s) {
+  /** 我的代码开始 */
+  for(int i = actual->first(); actual->more(i); i = actual->next(i)){
+    Expression expr = actual->nth(i);
+    expr->code(s);
+    emit_push(ACC, s);
+  }
+  expr->code(s);
+  emit_judge_void(s, global_self_type, get_line_number(), "_dispatch_abort");
+  // type_name有没有可能是SELF_TYPE？
+  emit_partial_load_address(T1, s); emit_disptable_ref(type_name, s); s << endl;
+  int func_offset = get_func_offset(type_name, name, global_class_table);
+  emit_load(T1, func_offset, T1, s);
+  emit_jalr(T1, s);
+  /** 我的代码结束 */
 }
 
 void dispatch_class::code(ostream &s) {
@@ -1234,6 +1313,7 @@ void dispatch_class::code(ostream &s) {
     emit_push(ACC, s);
   }
   expr->code(s);
+  emit_judge_void(s, global_self_type, get_line_number(), "_dispatch_abort");
   // 完成寄存器保存，s0替换 --> ar变化，取消
   // emit_func_ref_after_param(s);
   // 查找特定的函数然后跳转，s0替换后
@@ -1254,45 +1334,268 @@ void dispatch_class::code(ostream &s) {
 }
 
 void cond_class::code(ostream &s) {
+  /** 我的代码开始 */
+  pred->code(s);
+  // 结束分支和else分支各使用一个
+  global_labal += 2;
+  int labal = global_labal;
+  // 先执行ACC中是不是TRUE
+  emit_load(T1, DEFAULT_OBJFIELDS, ACC, s);
+  emit_beqz(T1, labal-2, s);
+  // 正确分支
+  then_exp->code(s);
+  emit_branch(labal-1, s);
+  // 错误分支
+  emit_label_def(labal-2,s);
+  else_exp->code(s);
+  // 结束标志
+  emit_label_def(labal-1,s);  
+  /** 我的代码结束 */
 }
 
 void loop_class::code(ostream &s) {
+  /** 我的代码开始 */
+  global_labal += 2;
+  int labal = global_labal;
+  emit_label_def(labal-2,s);
+  pred->code(s);
+  emit_load(T1, DEFAULT_OBJFIELDS, ACC, s);
+  emit_beqz(T1, labal-1, s);
+  body->code(s);
+  emit_branch(labal-2, s);
+  emit_label_def(labal-1,s);
+  // loop的结果是void
+  emit_load_imm(ACC, 0, s);
+  /** 我的代码结束 */
 }
 
+/** 我的代码开始 */
+// 通过classtag的设置，应该可以优化这里和typcase_class的逻辑
+static void get_child_ordered(CgenNodeP node, std::vector<CgenNodeP>& vec){
+  vec.push_back(node);
+  auto children = node->get_children();
+  for (children; children != NULL; children = children->tl()){
+    get_child_ordered(children->hd(), vec);
+  }
+}
+
+static std::deque<branch_class*> get_branch_ordered(Cases cases){
+  auto root = global_class_table->get_node_by_class(Object);
+  std::vector<CgenNodeP> vec;
+  get_child_ordered(root, vec);
+  std::deque<branch_class*> res;
+  for(auto node : vec){
+    for(int i = cases->first(); cases->more(i); i = cases->next(i)){
+      auto branch = dynamic_cast<branch_class*>(cases->nth(i));
+      Symbol class_name = branch->type_decl;
+      if(node->name == class_name){
+        res.push_front(branch);
+        break;
+      }
+    }
+  }
+  return res;
+}
+/** 我的代码结束 */
+
 void typcase_class::code(ostream &s) {
+  /** 我的代码开始 */
+  expr->code(s);
+  emit_judge_void(s, global_self_type, get_line_number(), "_case_abort2");
+  // t1 保存了classtag
+  emit_load(T1, 0, ACC, s);
+  int type_label = global_labal;
+  int type_label_max = global_labal + 2*cases->len();
+  global_labal += 2*cases->len()+1;
+
+  std::deque<branch_class*> branches = get_branch_ordered(cases);
+  for(auto it = branches.begin(); it != branches.end(); ++it){
+    auto& branch = *it;
+    // 根据class_name找到所有子节点tag
+    Symbol class_name = branch->type_decl;
+    auto node = global_class_table->get_node_by_class(class_name);
+
+    std::vector<CgenNodeP> vec;
+    get_child_ordered(node, vec);
+    emit_label_def(type_label++,s);
+    for(auto cgennode : vec){
+      int class_tag = global_class_table->get_class_tag(cgennode->name);
+      // tag等于， 直接跳到expr逻辑
+      s << BEQ << T1 << " " << class_tag << " ";
+      emit_label_ref(type_label,s);
+      s << endl;
+    }
+    if (std::next(it) == branches.end()) {
+        s << JAL << "_case_abort" << endl;
+    }else{
+      emit_branch(type_label+1, s);
+    }
+    
+
+    std::unordered_map<Symbol, int> pre_param_pos = global_param_pos;
+    global_param_pos[branch->name] = global_let_pos--;
+    emit_label_def(type_label++,s);
+    emit_push(ACC, s);
+    branch->expr->code(s);
+    emit_addiu(SP,SP,4,s);
+    emit_branch(type_label_max, s);
+    global_let_pos++;
+    global_param_pos = pre_param_pos;
+  }
+  emit_label_def(type_label_max,s);
+  /** 我的代码结束 */
 }
 
 void block_class::code(ostream &s) {
+  /** 我的代码开始 */
+  // block表达式的值是最后一个expr的值。expr执行时，S可能会发生变化，如赋值语句。但是SO和E不变
+  for(int i = body->first(); body->more(i); i = body->next(i)){
+    Expression expr = body->nth(i);
+    expr->code(s);
+  }
+  /** 我的代码结束 */
 }
 
 void let_class::code(ostream &s) {
+  /** 我的代码开始 */
+  // let语句改变了变量的映射, 测试时发现没有初始化的其他类不能diapatch
+  if(dynamic_cast<no_expr_class*>(init) != nullptr){
+    if (type_decl == Int || type_decl == Str || type_decl == Bool) {
+      emit_partial_load_address(ACC, s); emit_protobj_ref(type_decl, s); s << endl;
+      emit_jal("Object.copy", s);
+    }else{
+      emit_load_imm(ACC, 0, s);
+    }
+  }else{
+    init->code(s);
+    // let初始化是指针类型的初始化，所以不能再拷贝
+    // emit_jal("Object.copy",s);
+  }
+  // 把初始化的a0的值压栈
+  emit_push(ACC, s);
+  // 此时变量ref发生变化，修改. 计算位置的时候需要以fp作为基准
+  std::unordered_map<Symbol, int> pre_param_pos = global_param_pos;
+  global_param_pos[identifier] = global_let_pos--;
+  body->code(s);
+  // 恢复栈和map
+  emit_addiu(SP,SP,4,s);
+  global_param_pos = pre_param_pos;
+  global_let_pos++;
+  /** 我的代码结束 */
 }
 
+/** 我的代码开始 */
+static void get_operand_common(Expression e1, Expression e2, ostream &s){
+  e1->code(s);
+  emit_push(ACC, s);
+  e2->code(s);
+  // a0此时是新的地址，但是值和e2还是一样的
+  emit_jal("Object.copy",s);
+  emit_load(T1, 1, SP, s);
+  emit_addiu(SP,SP,4,s);
+  emit_load(T1, DEFAULT_OBJFIELDS, T1, s);
+  emit_load(T2, DEFAULT_OBJFIELDS, ACC, s);
+}
+/** 我的代码结束 */
+
+
 void plus_class::code(ostream &s) {
+  /** 我的代码开始 */
+  get_operand_common(e1, e2, s);
+  emit_add(T1, T1, T2, s);
+  emit_store(T1, DEFAULT_OBJFIELDS, ACC, s);
+  /** 我的代码结束 */
 }
 
 void sub_class::code(ostream &s) {
+  /** 我的代码开始 */
+  // Todo:问题1, sub等操作的overflow问题
+  get_operand_common(e1, e2, s);
+  emit_sub(T1, T1, T2, s);
+  emit_store(T1, DEFAULT_OBJFIELDS, ACC, s);
+  /** 我的代码结束 */
 }
 
 void mul_class::code(ostream &s) {
+  /** 我的代码开始 */
+  get_operand_common(e1, e2, s);
+  emit_mul(T1, T1, T2, s);
+  emit_store(T1, DEFAULT_OBJFIELDS, ACC, s);
+  /** 我的代码结束 */
 }
 
 void divide_class::code(ostream &s) {
+  /** 我的代码开始 */
+  // 除0是在哪里处理
+  // 测试时发现程序可以自动报错exception，是不是模拟器这一层处理的？
+  get_operand_common(e1, e2, s);
+  emit_div(T1, T1, T2, s);
+  emit_store(T1, DEFAULT_OBJFIELDS, ACC, s);
+  /** 我的代码结束 */
 }
 
 void neg_class::code(ostream &s) {
+  /** 我的代码开始 */
+  e1->code(s);
+  // bug:此处需要复制。否则～1会改变整数最开始定义的初始值
+  emit_jal("Object.copy",s);
+  emit_load(T1, DEFAULT_OBJFIELDS, ACC, s);
+  emit_neg(T1, T1, s);
+  emit_store(T1, DEFAULT_OBJFIELDS, ACC, s);
+  /** 我的代码开始 */
 }
 
 void lt_class::code(ostream &s) {
+  /** 我的代码开始 */
+  get_operand_common(e1, e2, s);
+  emit_load_bool(ACC, BoolConst(1), s);
+  emit_blt(T1, T2, global_labal, s);
+  emit_load_bool(ACC, BoolConst(0), s);
+  emit_label_def(global_labal, s);
+  global_labal++;
+  /** 我的代码结束 */
 }
 
 void eq_class::code(ostream &s) {
+  /** 我的代码开始 */
+  // cool语言判断两个变量是否相等的逻辑是，非基础类地址相等，基础类比较值
+  // 不能直接使用t1，和t2.需要存到栈中。因为t1有可能被修改，如true=(1=1)
+  e1->code(s);
+  emit_push(ACC, s);
+  e2->code(s);
+  emit_load(T1, 1, SP, s);
+  emit_addiu(SP,SP,4,s);
+  emit_move(T2, ACC, s);
+  // a0为true， a1为false
+  emit_load_bool(ACC, BoolConst(1), s);
+  emit_load_bool(A1, BoolConst(0), s);
+  emit_beq(T1, T2, global_labal ,s);
+  emit_jal("equality_test",s);
+  emit_label_def(global_labal++,s); 
+  /** 我的代码结束 */
 }
 
 void leq_class::code(ostream &s) {
+  /** 我的代码开始 */
+  get_operand_common(e1, e2, s);
+  emit_load_bool(ACC, BoolConst(1), s);
+  emit_bleq(T1, T2, global_labal, s);
+  emit_load_bool(ACC, BoolConst(0), s);
+  emit_label_def(global_labal, s);
+  global_labal++;
+  /** 我的代码结束 */
 }
 
 void comp_class::code(ostream &s) {
+  /** 我的代码开始 */
+  e1->code(s);
+  emit_load(T1, DEFAULT_OBJFIELDS, ACC, s);
+  emit_load_bool(ACC, BoolConst(1), s);
+  emit_beqz(T1, global_labal, s);
+  emit_load_bool(ACC, BoolConst(0), s);
+  emit_label_def(global_labal, s);
+  global_labal++;
+  /** 我的代码开始 */
 }
 
 void int_const_class::code(ostream& s)  
@@ -1314,9 +1617,50 @@ void bool_const_class::code(ostream& s)
 }
 
 void new__class::code(ostream &s) {
+  /** 我的代码开始 */
+  Symbol class_name = type_name;
+  // new SELF_TYPE根据当前的类型动态创造新类
+  if(type_name == SELF_TYPE){
+    // 将classtag加载,并根据classtag求出偏移
+    emit_load(T1, 0, SELF, s);
+    emit_sll(T1, T1, 3, s);
+    // 加载claas_objTab地址
+    emit_partial_load_address(T2, s); s << CLASSOBJTAB << endl;
+    emit_addu(T1, T1, T2, s);
+    // acc指向***_protoobj
+    emit_load(ACC, 0, T1, s);
+    emit_push(T1, s);
+    emit_jal("Object.copy",s);
+    // 重新加载T1
+    emit_load(T1, 1, SP, s);
+    emit_addiu(SP,SP,4,s);
+    // 加载***_init方法，并跳转
+    emit_load(T1, 1, T1, s);
+    emit_jalr(T1, s);
+    return;
+  }
+  // 调用copy前，需要把对象放到$a0中
+  emit_partial_load_address(ACC, s);
+  emit_protobj_ref(class_name, s);
+  s << endl;
+  emit_jal("Object.copy",s);
+  // 和dispatch一样，这时a0就是将要执行的类
+  s << JALR;
+  emit_init_ref(class_name, s);
+  s << endl;
+  /** 我的代码开始 */
 }
 
 void isvoid_class::code(ostream &s) {
+  /** 我的代码开始 */
+  e1->code(s);
+  emit_move(T1, ACC, s);
+  emit_load_bool(ACC, BoolConst(1), s);
+  emit_beqz(T1, global_labal, s);
+  emit_load_bool(ACC, BoolConst(0), s);
+  emit_label_def(global_labal, s);
+  global_labal++;
+  /** 我的代码开始 */
 }
 
 void no_expr_class::code(ostream &s) {
@@ -1328,6 +1672,30 @@ void object_class::code(ostream &s) {
   {
     // 把当前对象的地址移动到$a0中
     emit_move(ACC, SELF, s);
+    return;
+  }
+  // 关于成员变量名的引用，cool存在如下事实
+  // 父类和子类不能同时定义相同名称的成员变量，只存在一份。
+  // 那么可以代码写在哪个类的函数中，就到这个类去查找变量的偏移。如果运行时，此时SO是子类，那么偏移找到父类的位置，在子类中也一样
+  // 如果是在初始化表达式中出现的expr，那么只能使用成员变量
+
+  // 关于在栈中的函数参数，在函数中,可以查找到参数在函数这个feature的语法书node中各个参数的位置。
+  // 实际运行到这里的时候，参数已经入栈，可以根据查找的位置找到变量
+
+  // Let语句也能改变参数的引用
+
+  // init表达式语句时，global_param_pos为空,pos从0开始
+  if(global_param_pos.find(name) != global_param_pos.end()){
+    int pos = global_param_pos[name];
+    // 引用时需要与入栈和$fp像匹配
+    emit_load(ACC, pos, FP, s);
+    return;
+  }
+  
+  int var_offset = get_var_offset(global_self_type, name, global_class_table);
+  if(var_offset != -1){
+    emit_load(ACC, DEFAULT_OBJFIELDS + var_offset, SELF, s);
+    return;
   }
 }
 
