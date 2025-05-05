@@ -133,12 +133,33 @@
     %type <program> program
     %type <classes> class_list
     %type <class_> class
+    %type <feature> feature
+    %type <expression> expression
+    %type <formals> formal_list
+    %type <formals> formal_list_not_empty
+    %type <expressions> expression_list
+    %type <expressions> expression_list_not_empty
+    %type <expressions> block_body
+    %type <expression> let_right_part
+    %type <cases> case_branches
     
     /* You will want to change the following line. */
-    %type <features> dummy_feature_list
+    %type <features> feature_list
+    %type <features> feature_list_not_empty
     
     /* Precedence declarations go here. */
-    
+    /* 优先级由高往低. @ ~ isvoid * / + - <= < = not <-*/
+    /*比较符号没有结合性，赋值是a右结合,在语法ID <- expr也能固定优先级和结合性*/
+    %right ASSIGN
+    %left NOT
+    %nonassoc '<' '=' LE
+    %left '+' '-'
+    %left '*' '/'
+    %left ISVOID
+    %precedence NEG
+    /*@ TYPE 应该也能显示确定优先级*/
+    %left '@'
+    %left '.'
     
     %%
     /* 
@@ -157,18 +178,132 @@
     ;
     
     /* If no parent is specified, the class inherits from the Object class. */
-    class	: CLASS TYPEID '{' dummy_feature_list '}' ';'
+    class	: CLASS TYPEID '{' feature_list '}' ';'
     { $$ = class_($2,idtable.add_string("Object"),$4,
     stringtable.add_string(curr_filename)); }
-    | CLASS TYPEID INHERITS TYPEID '{' dummy_feature_list '}' ';'
+    | CLASS TYPEID INHERITS TYPEID '{' feature_list '}' ';'
     { $$ = class_($2,$4,$6,stringtable.add_string(curr_filename)); }
+    |error
     ;
     
     /* Feature list may be empty, but no empty features in list. */
-    dummy_feature_list:		/* empty */
+    feature_list:		/* empty */
     {  $$ = nil_Features(); }
+    |feature_list_not_empty
+    {$$ = $1;}
+
+    feature_list_not_empty:feature ';'
+    {$$ = single_Features($1);}
+    |feature_list_not_empty feature ';'
+    {$$ = append_Features($1,single_Features($2));}
+
+    feature:OBJECTID '(' formal_list ')' ':' TYPEID '{' expression '}'
+    {$$ = method($1, $3, $6, $8);}
+    |OBJECTID ':' TYPEID
+    {$$ = attr($1, $3, no_expr());}
+    |OBJECTID ':' TYPEID ASSIGN expression
+    {$$ = attr($1, $3, $5);}
+    |error
+
+    formal_list:
+    {$$ = nil_Formals();}
+    |formal_list_not_empty
+    {$$ = $1;}
+
+    formal_list_not_empty: OBJECTID ':' TYPEID
+    {$$ = single_Formals(formal($1, $3));}
+    |formal_list_not_empty ',' OBJECTID ':' TYPEID
+    {$$ = append_Formals($1, single_Formals(formal($3, $5)));}
+
+
+    expression:OBJECTID ASSIGN expression
+    {$$ = assign($1, $3);}
+    |expression '.' OBJECTID '(' expression_list ')'
+    {$$ = dispatch($1, $3, $5);}
+    |expression '@' TYPEID '.' OBJECTID '(' expression_list ')'
+    {$$ = static_dispatch($1, $3, $5, $7);}
+    |OBJECTID '(' expression_list ')'
+    {$$ = dispatch(object(idtable.add_string("self")), $1, $3);}
+    |IF expression THEN expression ELSE expression FI
+    {$$ = cond($2, $4, $6);}
+    |WHILE expression LOOP expression POOL
+    {$$ = loop($2, $4);}
+    |'{' block_body '}'
+    {$$ = block($2);}
+    |LET let_right_part
+    {$$ = $2;}
+    |CASE expression OF case_branches ESAC
+    {$$ = typcase($2, $4);}
+    |NEW TYPEID
+    {$$ = new_($2);}
+    |ISVOID expression
+    {$$ = isvoid($2);}
+    |expression '+' expression
+    {$$ = plus($1, $3);}
+    |expression '-' expression
+    {$$ = sub($1, $3);}
+    |expression '*' expression
+    {$$ = mul($1, $3);}
+    |expression '/' expression
+    {$$ = divide($1, $3);}
+    |'~' expression %prec NEG
+    {$$ = neg($2);}
+    |expression '<' expression
+    {$$ = lt($1, $3);}
+    |expression LE expression
+    {$$ = leq($1, $3);}
+    |expression '=' expression
+    {$$ = eq($1, $3);}
+    |NOT expression
+    {$$ = comp($2);}
+    |'(' expression ')'
+    {$$ = $2;}
+    |OBJECTID
+    {$$ = object($1);}
+    |INT_CONST
+    {$$ = int_const($1);}
+    |STR_CONST
+    {$$ = string_const($1);}
+    |BOOL_CONST
+    {$$ = bool_const($1);}
     
+    expression_list:
+    {$$ = nil_Expressions();}
+    |expression_list_not_empty
+    {$$ = $1;}
+
+    expression_list_not_empty:expression
+    {$$ = single_Expressions($1);}
+    |expression_list_not_empty ',' expression
+    {$$ = append_Expressions($1, single_Expressions($3));}
+    // 为了避免func(,5,4,)报错两处，->了解bison错误恢复机制是怎么样的
+    | error ','
+
+    block_body:expression ';'
+    {$$ = single_Expressions($1);}
+    |block_body expression ';'
+    {$$ = append_Expressions($1, single_Expressions($2));}
+    //block语句需要多处报错，以;作为一个语句的报错单位->了解bison错误恢复机制是怎么样的
+    |block_body error ';'
     
+    let_right_part: OBJECTID ':' TYPEID IN expression
+    {$$ = let($1, $3, no_expr(), $5);}
+    | OBJECTID ':' TYPEID ASSIGN expression IN expression
+    {$$ = let($1, $3, $5, $7);}
+    | OBJECTID ':' TYPEID ',' let_right_part
+    {$$ = let($1, $3, no_expr(), $5);}
+    | OBJECTID ':' TYPEID ASSIGN expression ',' let_right_part
+    {$$ = let($1, $3, $5, $7);}
+    // let语句不以;为单位，->了解bison错误恢复机制是怎么样的
+    |error let_right_part
+
+    case_branches: OBJECTID ':' TYPEID DARROW expression ';'
+    {$$ = single_Cases(branch($1, $3, $5));}
+    |case_branches OBJECTID ':' TYPEID DARROW expression ';'
+    {$$ = append_Cases($1, single_Cases(branch($2, $4, $6)));}
+
+
+
     /* end of grammar */
     %%
     
