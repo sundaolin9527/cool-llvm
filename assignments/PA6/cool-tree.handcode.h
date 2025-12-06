@@ -45,33 +45,27 @@ typedef list_node<Case> Cases_class;
 typedef Cases_class *Cases;
 
 #define Program_EXTRAS                          \
-virtual void semant() = 0;			\
+virtual void cgen(ostream&) = 0;		\
 virtual void dump_with_types(ostream&, int) = 0; 
 
 
 
 #define program_EXTRAS                          \
-void semant();     				\
+void cgen(ostream&);     			\
 void dump_with_types(ostream&, int);            
 
 #define Class__EXTRAS                   \
+virtual Symbol get_name() = 0;  	\
+virtual Symbol get_parent() = 0;    	\
 virtual Symbol get_filename() = 0;      \
-virtual void dump_with_types(ostream&,int) = 0; \
-virtual void semant() = 0;	\
-virtual Symbol get_name() = 0;	\
-virtual Symbol get_parent() = 0;	\
-virtual void gather_method_info() = 0;	\
-virtual void gather_attribute_info(Symbol gather_class) = 0;
+virtual void dump_with_types(ostream&,int) = 0; 
 
 
-#define class__EXTRAS                                 \
+#define class__EXTRAS                                  \
+Symbol get_name()   { return name; }		       \
+Symbol get_parent() { return parent; }     	       \
 Symbol get_filename() { return filename; }             \
-void dump_with_types(ostream&,int);                    \
-void semant();	\
-Symbol get_name();	\
-Symbol get_parent();	\
-void gather_method_info();	\
-void gather_attribute_info(Symbol gather_class);
+void dump_with_types(ostream&,int);                    
 
 
 #define Feature_EXTRAS                                        \
@@ -82,55 +76,34 @@ virtual void dump_with_types(ostream&,int) = 0;
 void dump_with_types(ostream&,int);    
 
 
-#define  attr_EXTRAS	\
-Expression get_init();	\
-Symbol get_name(); \
-Symbol get_type_decl();
-
-
-#define method_EXTRAS	\
-void semant(); \
-void add_mathod_map(Symbol class_name);	\
-Symbol get_name();
-
-
 #define Formal_EXTRAS                              \
-virtual void dump_with_types(ostream&,int) = 0;		\
-virtual void add_symbol() = 0;	\
-virtual Symbol get_type() = 0;	\
-virtual Symbol get_name() = 0;
+virtual void dump_with_types(ostream&,int) = 0;
 
 
 #define formal_EXTRAS                           \
-void dump_with_types(ostream&,int);	\
-void add_symbol();	\
-Symbol get_type();	\
-Symbol get_name();
+void dump_with_types(ostream&,int);
 
 
 #define Case_EXTRAS                             \
-virtual void dump_with_types(ostream& ,int) = 0; \
-virtual Symbol semant()=0; 	\
-virtual Symbol get_type_decl()=0;
+virtual void dump_with_types(ostream& ,int) = 0;
 
 
 #define branch_EXTRAS                                   \
-void dump_with_types(ostream& ,int);	\
-Symbol semant();	\
-Symbol get_type_decl();
+void dump_with_types(ostream& ,int);
 
 
 #define Expression_EXTRAS                    \
 Symbol type;                                 \
 Symbol get_type() { return type; }           \
 Expression set_type(Symbol s) { type = s; return this; } \
+virtual void code(ostream&) = 0; \
 virtual void dump_with_types(ostream&,int) = 0;  \
 void dump_type(ostream&, int);               \
-Expression_class() { type = (Symbol) NULL; }	\
-virtual void semant() = 0;
+Expression_class() { type = (Symbol) NULL; }
 
 #define Expression_SHARED_EXTRAS           \
-void dump_with_types(ostream&,int);	\
-void semant();
+void code(ostream&); 			   \
+void dump_with_types(ostream&,int); 
+
 
 #endif
