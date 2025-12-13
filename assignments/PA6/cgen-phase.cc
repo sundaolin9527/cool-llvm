@@ -36,7 +36,8 @@ int main(int argc, char *argv[]) {
   // compiler have succeeded.
   //
   ast_yyparse();
-
+  ast_root->dump_with_types(cout,0);
+  
   if (out_filename) {
       ofstream s(out_filename);
       if (!s) {
