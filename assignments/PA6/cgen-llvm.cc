@@ -6,19 +6,52 @@
 
 using namespace llvm;
 #include "cgen.h"
+llvm::Value* emit_class__class(class__class* cls);
+llvm::Value* emit_class_(Class_ class_);
+llvm::Value* emit_method_class(method_class* method);
+llvm::Value* emit_attr_class(attr_class* attr);
+llvm::Value* emit_feature(Feature feature);
+llvm::Value* emit_formal(Formal formal);
+llvm::Value* emit_assign_class(assign_class* expr);
+llvm::Value* emit_static_dispatch_class(static_dispatch_class* expr);
+llvm::Value* emit_dispatch_class(dispatch_class* expr);
+llvm::Value* emit_cond_class(cond_class* expr);
+llvm::Value* emit_loop_class(loop_class* expr);
+llvm::Value* emit_typcase_class(typcase_class* expr);
+llvm::Value* emit_block_class(block_class* expr);
+llvm::Value* emit_let_class(let_class* expr);
+llvm::Value* emit_plus_class(plus_class* expr);
+llvm::Value* emit_sub_class(sub_class* expr);
+llvm::Value* emit_mul_class(mul_class* expr);
+llvm::Value* emit_divide_class(divide_class* expr);
+llvm::Value* emit_neg_class(neg_class* expr);
+llvm::Value* emit_lt_class(lt_class* expr);
+llvm::Value* emit_eq_class(eq_class* expr);
+llvm::Value* emit_leq_class(leq_class* expr);
+llvm::Value* emit_comp_class(comp_class* expr);
+llvm::Value* emit_int_const_class(int_const_class* expr);
+llvm::Value* emit_bool_const_class(bool_const_class* expr);
+llvm::Value* emit_string_const_class(string_const_class* expr);
+llvm::Value* emit_new__class(new__class* expr);
+llvm::Value* emit_isvoid_class(isvoid_class* expr);
+llvm::Value* emit_no_expr_class(no_expr_class* expr);
+llvm::Value* emit_object_class(object_class* expr);
+llvm::Value* emit_expression(Expression e);
+llvm::Value* emit_branch_class(branch_class* branch);
+llvm::Value* emit_case(Case _case);
+llvm::Value* emit_program_class(program_class* program);
+llvm::Value* emit_program(Program program);
+
+LLVMContext context; // 贯穿整个流程
+Module module("MainModule", context); // 一个编译单元
+IRBuilder<> builder(context);
 
 void emit_llvm_ir(Program program) {
     // LLVM 代码生成逻辑
     std::cout << "Hello, World!" << std::endl;
-    // 1. 创建上下文和模块
-    LLVMContext context;
-    Module module("simple_module", context);
-    
-    // 2. 创建 IR 构建器
-    IRBuilder<> builder(context);
+
     
     // 3. 创建一个简单的函数：int main() { return 42; }
-    
     // 创建函数类型：返回 int，无参数
     FunctionType *funcType = FunctionType::get(
         builder.getInt32Ty(),  // 返回类型：32位整数
@@ -48,4 +81,254 @@ void emit_llvm_ir(Program program) {
     
     // 7. 打印生成的 LLVM IR
     module.print(outs(), nullptr);
+}
+
+llvm::Value *emit_class__class(class__class* _class)
+{
+
+}
+
+llvm::Value *emit_class_(Class_ class_)
+{
+     return emit_class__class((class__class*)class_);
+}
+
+
+llvm::Value *emit_method_class(method_class* feature)
+{
+    
+}
+
+llvm::Value *emit_attr_class(attr_class* feature)
+{
+    
+}
+
+llvm::Value *emit_feature(Feature feature)
+{
+    if (auto* method = dynamic_cast<method_class*>(feature)) {
+        return emit_method_class(method);
+    } else if (auto* attr = dynamic_cast<attr_class*>(feature)) {
+        return emit_attr_class(attr);
+    }
+    return nullptr;
+}
+
+llvm::Value *emit_formal(Formal formal)
+{
+     
+}
+
+llvm::Value *emit_assign_class(assign_class* expression)
+{
+     
+}
+
+llvm::Value *emit_static_dispatch_class(static_dispatch_class* expression)
+{
+     
+}
+
+llvm::Value *emit_dispatch_class(dispatch_class* expression)
+{
+     
+}
+
+llvm::Value *emit_cond_class(cond_class* expression)
+{
+     
+}
+
+llvm::Value *emit_loop_class(loop_class* expression)
+{
+     
+}
+
+llvm::Value *emit_typcase_class(typcase_class* expression)
+{
+     
+}
+
+llvm::Value *emit_block_class(block_class* expression)
+{
+     
+}
+
+llvm::Value *emit_let_class(let_class* expression)
+{
+
+}
+
+llvm::Value* emit_plus_class(plus_class* expression) {
+    llvm::Value* left_val = emit_expression(expression->e1);
+    llvm::Value* right_val = emit_expression(expression->e2);
+    return builder.CreateAdd(left_val, right_val, "addtmp");
+}
+
+llvm::Value* emit_sub_class(sub_class* expression) {
+    llvm::Value* left_val = emit_expression(expression->e1);
+    llvm::Value* right_val = emit_expression(expression->e2);
+    
+    return builder.CreateSub(left_val, right_val, "subtmp");
+}
+
+llvm::Value* emit_mul_class(mul_class* expression) {
+    llvm::Value* left_val = emit_expression(expression->e1);
+    llvm::Value* right_val = emit_expression(expression->e2);
+    
+    return builder.CreateMul(left_val, right_val, "multmp");
+}
+
+llvm::Value* emit_divide_class(divide_class* expression) {
+    llvm::Value* left_val = emit_expression(expression->e1);
+    llvm::Value* right_val = emit_expression(expression->e2);
+    
+    return builder.CreateSDiv(left_val, right_val, "divtmp");
+}
+
+llvm::Value* emit_neg_class(neg_class* expression) {
+    llvm::Value* val = emit_expression(expression->e1);
+    
+    llvm::Value* zero = llvm::ConstantInt::get(builder.getInt32Ty(), 0);
+    return builder.CreateSub(zero, val, "negtmp");
+}
+
+llvm::Value* emit_lt_class(lt_class* expression) {
+    llvm::Value* left_val = emit_expression(expression->e1);
+    llvm::Value* right_val = emit_expression(expression->e2);
+    
+    return builder.CreateICmpSLT(left_val, right_val, "cmptmp");
+}
+
+llvm::Value* emit_eq_class(eq_class* expression) {
+    llvm::Value* left_val = emit_expression(expression->e1);
+    llvm::Value* right_val = emit_expression(expression->e2);
+    
+    return builder.CreateICmpEQ(left_val, right_val, "eqtmp");
+}
+
+llvm::Value* emit_leq_class(leq_class* expression) {
+    llvm::Value* left_val = emit_expression(expression->e1);
+    llvm::Value* right_val = emit_expression(expression->e2);
+    
+    return builder.CreateICmpSLE(left_val, right_val, "leqtmp");
+}
+
+llvm::Value* emit_comp_class(comp_class* expression) {
+    llvm::Value* val = emit_expression(expression->e1);
+    return builder.CreateNot(val, "comptmp");
+}
+
+llvm::Value* emit_int_const_class(int_const_class* expression) {
+    int value = std::stoi(expression->token->get_string());
+    return llvm::ConstantInt::get(builder.getInt32Ty(), value);
+}
+
+llvm::Value* emit_bool_const_class(bool_const_class* expression) 
+{
+    return llvm::ConstantInt::get(builder.getInt1Ty(), expression->val ? 1 : 0);
+}
+
+llvm::Value* emit_string_const_class(string_const_class* expression) {
+
+}
+
+llvm::Value* emit_new__class(new__class* expression) {
+    
+}
+
+llvm::Value* emit_isvoid_class(isvoid_class* expression) {
+    llvm::Value* val = emit_expression(expression->e1);
+    
+    llvm::Value* null_val = llvm::Constant::getNullValue(val->getType());
+    return builder.CreateICmpEQ(val, null_val, "isvoidtmp");
+}
+
+llvm::Value* emit_no_expr_class(no_expr_class* expression) {
+    return llvm::Constant::getNullValue(builder.getVoidTy());
+}
+
+llvm::Value* emit_object_class(object_class* expression) {
+    
+}
+
+llvm::Value* emit_expression(Expression e) {
+    if (!e) {
+        return nullptr;
+    }
+    
+    if (auto* expr = dynamic_cast<plus_class*>(e)) {
+        return emit_plus_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<sub_class*>(e)) {
+        return emit_sub_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<mul_class*>(e)) {
+        return emit_mul_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<divide_class*>(e)) {
+        return emit_divide_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<neg_class*>(e)) {
+        return emit_neg_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<lt_class*>(e)) {
+        return emit_lt_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<eq_class*>(e)) {
+        return emit_eq_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<leq_class*>(e)) {
+        return emit_leq_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<comp_class*>(e)) {
+        return emit_comp_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<int_const_class*>(e)) {
+        return emit_int_const_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<bool_const_class*>(e)) {
+        return emit_bool_const_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<string_const_class*>(e)) {
+        return emit_string_const_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<new__class*>(e)) {
+        return emit_new__class(expr);
+    }
+    else if (auto* expr = dynamic_cast<isvoid_class*>(e)) {
+        return emit_isvoid_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<no_expr_class*>(e)) {
+        return emit_no_expr_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<object_class*>(e)) {
+        return emit_object_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<let_class*>(e)) {
+        return emit_let_class(expr);
+    }
+    
+    std::cerr << "Error: Unknown expression type" << std::endl;
+    return nullptr;
+}
+
+llvm::Value *emit_branch_class(branch_class *branch)
+{
+     
+}
+
+llvm::Value *emit_case(Case _case)
+{
+    return emit_branch_class((branch_class*)_case);
+}
+
+llvm::Value *emit_program_class(program_class *program)
+{
+     
+}
+
+llvm::Value* emit_program(Program program) 
+{
+    return emit_program_class((program_class*)program);
 }
