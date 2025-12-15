@@ -47,9 +47,11 @@ Module module("MainModule", context); // 一个编译单元
 IRBuilder<> builder(context);
 
 void emit_llvm_ir(Program program) {
+    emit_program(program);
     // LLVM 代码生成逻辑
     std::cout << "Hello, World!" << std::endl;
-    emit_program(program);
+
+    
     
     // 3. 创建一个简单的函数：int main() { return 42; }
     // 创建函数类型：返回 int，无参数
@@ -86,6 +88,7 @@ void emit_llvm_ir(Program program) {
 llvm::Value *emit_class__class(class__class* _class)
 {
     if (_class == nullptr) return nullptr;
+
 }
 
 llvm::Value *emit_class_(Class_ class_)
@@ -97,6 +100,7 @@ llvm::Value *emit_class_(Class_ class_)
 llvm::Value *emit_method_class(method_class* method)
 {
     if (method == nullptr) return nullptr;
+
 }
 
 llvm::Value *emit_attr_class(attr_class* attr)
@@ -138,6 +142,125 @@ llvm::Value *emit_dispatch_class(dispatch_class* expression)
 llvm::Value *emit_cond_class(cond_class* expression)
 {
     if (expression == nullptr) return nullptr;
+
+    llvm::Function* current_function = builder.GetInsertBlock()->getParent();
+    llvm::Value* pred_value = emit_expression(expression->pred);
+
+     // 确保条件值是布尔类型
+    if (!pred_value->getType()->isIntegerTy(1)) {
+        if (pred_value->getType()->isIntegerTy()) {
+            // 整数类型：比较是否不等于0
+            llvm::Value* zero = llvm::ConstantInt::get(pred_value->getType(), 0);
+            pred_value = builder.CreateICmpNE(pred_value, zero, "bool_cmp");
+        } else if (pred_value->getType()->isPointerTy()) {
+            // 指针类型：比较是否不等于nullptr
+            llvm::Value* null_ptr = llvm::ConstantPointerNull::get(
+                static_cast<llvm::PointerType*>(pred_value->getType())
+            );
+            pred_value = builder.CreateICmpNE(pred_value, null_ptr, "ptr_cmp");
+        } else if (pred_value->getType()->isFloatingPointTy()) {
+            // 浮点类型：比较是否不等于0.0
+            llvm::Value* zero_float = llvm::ConstantFP::get(pred_value->getType(), 0.0);
+            pred_value = builder.CreateFCmpONE(pred_value, zero_float, "float_cmp");
+        } else {
+            // 其他类型：尝试转换为i1
+            pred_value = builder.CreateICmpNE(
+                builder.CreatePtrToInt(pred_value, llvm::Type::getInt64Ty(context)),
+                llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 0),
+                "generic_cmp"
+            );
+        }
+    }
+    
+    // 2. 创建基本块
+    llvm::BasicBlock* then_block = llvm::BasicBlock::Create(context, "then", current_function);
+    llvm::BasicBlock* else_block = llvm::BasicBlock::Create(context, "else");
+    llvm::BasicBlock* merge_block = llvm::BasicBlock::Create(context, "ifcont");
+    
+    // 3. 创建条件分支
+    builder.CreateCondBr(pred_value, then_block, else_block);
+    
+    // 4. 生成 then 分支
+    builder.SetInsertPoint(then_block);
+    llvm::Value* then_value = emit_expression(expression->then_exp);
+    
+    // 检查 then 分支是否已经终止（例如包含 return 语句）
+    bool then_terminated = builder.GetInsertBlock()->getTerminator() != nullptr;
+    if (!then_terminated) {
+        builder.CreateBr(merge_block);
+    }
+    
+    // 保存 then 分支的结束基本块
+    llvm::BasicBlock* then_end_block = builder.GetInsertBlock();
+    
+    // 5. 生成 else 分支
+    else_block->insertInto(current_function);
+    builder.SetInsertPoint(else_block);
+    llvm::Value* else_value = emit_expression(expression->else_exp);
+    
+    // 检查 else 分支是否已经终止
+    bool else_terminated = builder.GetInsertBlock()->getTerminator() != nullptr;
+    if (!else_terminated) {
+        builder.CreateBr(merge_block);
+    }
+    
+    // 保存 else 分支的结束基本块
+    llvm::BasicBlock* else_end_block = builder.GetInsertBlock();
+    
+    // 6. 添加 merge 块到函数
+    merge_block->insertInto(current_function);
+    builder.SetInsertPoint(merge_block);
+    
+    // 7. 处理返回值（创建 phi 节点）
+    if (!then_terminated && !else_terminated) {
+        // 确保两个分支的返回类型一致
+        if (then_value == nullptr || else_value == nullptr) {
+            // 某个分支没有返回值（可能是 void 类型）
+            return nullptr;
+        }
+        
+        // 检查类型是否匹配
+        if (then_value->getType() != else_value->getType()) {
+            // 尝试进行类型转换
+            // 先检查是否可以转换为共同的类型
+            
+            // 如果一个是整数，另一个也是整数
+            if (then_value->getType()->isIntegerTy() && else_value->getType()->isIntegerTy()) {
+                // 找到较大的整数类型
+                unsigned then_bits = then_value->getType()->getIntegerBitWidth();
+                unsigned else_bits = else_value->getType()->getIntegerBitWidth();
+                
+                if (then_bits < else_bits) {
+                    // 扩展 then_value
+                    then_value = builder.CreateSExt(then_value, else_value->getType(), "sext_then");
+                } else if (then_bits > else_bits) {
+                    // 扩展 else_value
+                    else_value = builder.CreateSExt(else_value, then_value->getType(), "sext_else");
+                }
+            }
+        }
+        
+        // 创建 phi 节点合并两个分支的值
+        llvm::PHINode* phi_node = builder.CreatePHI(
+            then_value->getType(), 
+            2, 
+            "cond_result"
+        );
+        
+        phi_node->addIncoming(then_value, then_end_block);
+        phi_node->addIncoming(else_value, else_end_block);
+        
+        return phi_node;
+    } else if (then_terminated && !else_terminated) {
+        // then 分支已经终止，不需要 phi 节点
+        return else_value;
+    } else if (!then_terminated && else_terminated) {
+        // else 分支已经终止，不需要 phi 节点
+        return then_value;
+    } else {
+        // 两个分支都已经终止（例如都有 return 语句）
+        return nullptr;
+    }
 }
 
 llvm::Value *emit_loop_class(loop_class* expression)
@@ -327,7 +450,12 @@ llvm::Value* emit_expression(Expression e) {
     else if (auto* expr = dynamic_cast<let_class*>(e)) {
         return emit_let_class(expr);
     }
-    
+    else if (auto* expr = dynamic_cast<dispatch_class*>(e)) {
+        return emit_dispatch_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<static_dispatch_class*>(e)) {
+        return emit_static_dispatch_class(expr);
+    }
     std::cerr << "Error: Unknown expression type" << std::endl;
     return nullptr;
 }
