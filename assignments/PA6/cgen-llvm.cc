@@ -276,6 +276,24 @@ llvm::Value *emit_typcase_class(typcase_class* expression)
 llvm::Value *emit_block_class(block_class* expression)
 {
     if (expression == nullptr) return nullptr;
+    
+    Expressions body = expression->body;
+    if (body == nullptr) return nullptr;
+    
+    llvm::Value* result = nullptr;
+    // 为每个表达式生成代码
+    for (int i = body->first(); body->more(i); i = body->next(i)) {
+        result = emit_expression(body->nth(i));
+    }
+    
+    // 如果所有表达式都是 void，返回默认值
+    if (!result) {
+        // 返回 Object 的默认值（空指针）
+        return llvm::Constant::getNullValue(
+            llvm::Type::getInt8PtrTy(context));
+    }
+    
+    return result;
 }
 
 llvm::Value *emit_let_class(let_class* expression)
