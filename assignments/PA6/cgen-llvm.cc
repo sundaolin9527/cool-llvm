@@ -266,6 +266,31 @@ llvm::Value *emit_cond_class(cond_class* expression)
 llvm::Value *emit_loop_class(loop_class* expression)
 {
     if (expression == nullptr) return nullptr;
+
+    Function *TheFunction = builder.GetInsertBlock()->getParent();
+    BasicBlock *LoopBB = BasicBlock::Create(context, "loop", TheFunction);
+    builder.CreateBr(LoopBB);
+    builder.SetInsertPoint(LoopBB);
+
+    // 先计算条件表达式
+    Value *predVal = emit_expression(expression->pred);
+    if (!predVal) {
+        return nullptr;
+    }
+
+    BasicBlock *AfterBB = BasicBlock::Create(context, "afterloop", TheFunction);
+    BasicBlock *BodyBB = BasicBlock::Create(context, "bodyloop", TheFunction);
+    builder.CreateCondBr(predVal, LoopBB, AfterBB);
+
+    // 函数体执行
+    builder.SetInsertPoint(BodyBB);
+    if (!emit_expression(expression->body)) {
+        return nullptr;
+    }
+    
+    builder.SetInsertPoint(AfterBB);
+    // 根据语义返回void(是否需要有个专门的东西表示void)
+    return nullptr;
 }
 
 llvm::Value *emit_typcase_class(typcase_class* expression)
@@ -467,6 +492,8 @@ llvm::Value* emit_expression(Expression e) {
     }
     else if (auto* expr = dynamic_cast<let_class*>(e)) {
         return emit_let_class(expr);
+    }else if (auto* expr = dynamic_cast<loop_class*>(e)) {
+        return emit_loop_class(expr);
     }
     else if (auto* expr = dynamic_cast<dispatch_class*>(e)) {
         return emit_dispatch_class(expr);
