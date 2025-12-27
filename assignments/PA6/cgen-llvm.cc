@@ -241,6 +241,10 @@ llvm::Value *emit_class__class(class__class* _class)
     // 创建结构体类型
     classLayout.type = llvm::StructType::create(context, structFields, className);
     
+    // 计算类大小
+    const llvm::DataLayout DL = module.getDataLayout();
+    classLayout.objectSize = DL.getTypeAllocSize(classLayout.type);
+
     //=== 阶段4：合并方法（处理继承和重写） ============================
     std::map<std::string, ClassMethodInfo> allMethods;
     std::vector<std::string> allMethodNamesInOrder;
@@ -280,7 +284,7 @@ llvm::Value *emit_class__class(class__class* _class)
     //=== 阶段6：构建虚表 ==============================================
     std::vector<llvm::Constant*> vtableEntries;
 
-    // 第一个条目：对象大小
+    // 第一个条目：对象大小(todo*)
     llvm::Constant* objectSizeConst = llvm::ConstantInt::get(
         llvm::Type::getInt32Ty(context), 
         classLayout.objectSize
