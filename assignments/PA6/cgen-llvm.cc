@@ -10,7 +10,8 @@ using FormalParams = std::pair<std::vector<std::string>, std::vector<llvm::Type*
 #include "cgen.h"
 llvm::Value* emit_class__class(class__class* _class);
 llvm::Value* emit_class_(Class_ class_);
-llvm::Value* emit_method_class(method_class* method);
+llvm::Value *emit_method_declare(method_class* method);
+llvm::Value* emit_method_define(method_class* method);
 llvm::Value* emit_attr_class(attr_class* attr);
 llvm::Value* emit_feature(Feature feature);
 llvm::Value* emit_assign_class(assign_class* expr);
@@ -269,9 +270,9 @@ llvm::Value *emit_class__class(class__class* _class)
     
     //=== 阶段5：生成方法函数 ==========================================
     currClassName = className;
-    classRegistry[className] = classLayout; // 先加，在emit_method_class需要用
+    classRegistry[className] = classLayout; // 先加，在emit_method_define需要用
     for (auto& methodInfo : classLayout.methods) {
-        llvm::Value *value = emit_method_class(methodInfo.method);
+        llvm::Value *value = emit_method_define(methodInfo.method);
         methodInfo.func = llvm::dyn_cast<llvm::Function>(value);
     }
     classRegistry.erase(className); // 再减，防止加错
@@ -548,7 +549,8 @@ llvm::Value *emit_class_(Class_ class_)
      return emit_class__class((class__class*)class_);
 }
 
-llvm::Value *emit_method_class(method_class* method)
+// 创建函数原型
+llvm::Value *emit_method_declare(method_class* method)
 {
     if (method == nullptr) return nullptr;
     // 确定返回类型
@@ -589,8 +591,7 @@ llvm::Value *emit_method_class(method_class* method)
         funcName,
         module
     );
-    
-    // ========== 创建函数体入口 ==========
+
     assert(func->arg_size() == paramNames.size() && 
         "Function argument count doesn't match parameter names!");
 
@@ -600,47 +601,59 @@ llvm::Value *emit_method_class(method_class* method)
         arg.setName(paramNames[i++]);
     }
 
-    // 创建基本块（函数体入口）
-    llvm::BasicBlock* entryBlock = llvm::BasicBlock::Create(
-        context,
-        "entry",
-        func
-    );
-    builder.SetInsertPoint(entryBlock);
+    return func;
+}
 
-    // 为参数创建alloca指令
-    for (auto& arg : func->args()) {
-        // 创建alloca指令分配空间
-        llvm::AllocaInst* alloca = builder.CreateAlloca(
-            arg.getType(),
-            nullptr,
-            arg.getName() + ".addr"
+llvm::Value *emit_method_define(method_class* method)
+{
+    if (method == nullptr) return nullptr;
+
+    llvm::Function* func = llvm::dyn_cast<llvm::Function>(emit_method_declare(method));
+    // ========== 创建函数体入口 ==========
+    if (method->expr != nullptr){
+        // 创建基本块（函数体入口）
+        llvm::BasicBlock* entryBlock = llvm::BasicBlock::Create(
+            context,
+            "entry",
+            func
         );
-        // 存储参数值到分配的空间
-        builder.CreateStore(&arg, alloca);
+        builder.SetInsertPoint(entryBlock);
+
+        // 为参数创建alloca指令
+        for (auto& arg : func->args()) {
+            // 创建alloca指令分配空间
+            llvm::AllocaInst* alloca = builder.CreateAlloca(
+                arg.getType(),
+                nullptr,
+                arg.getName() + ".addr"
+            );
+            // 存储参数值到分配的空间
+            builder.CreateStore(&arg, alloca);
+        }
+        
+        // 5.2 生成方法体的表达式/语句
+        llvm::BasicBlock* bodyBlock = llvm::BasicBlock::Create(
+            context,
+            "body",
+            func
+        );
+        builder.CreateBr(bodyBlock);
+        builder.SetInsertPoint(bodyBlock);
+        // llvm::Value* result = emit_expression(method->expr);
+        
+        // // 5.3 创建返回指令
+        // if (returnType->isVoidTy()) {
+        //     builder.CreateRetVoid();
+        // } else {
+        //     // 确保结果类型匹配返回类型
+        //     if (result->getType() != returnType) {
+        //         // 可能需要类型转换
+        //         result = builder.CreateBitCast(result, returnType, "result");
+        //     }
+        //     builder.CreateRet(result);
+        // }
     }
-    
-    // 5.2 生成方法体的表达式/语句
-    llvm::BasicBlock* bodyBlock = llvm::BasicBlock::Create(
-        context,
-        "body",
-        func
-    );
-    builder.CreateBr(bodyBlock);
-    builder.SetInsertPoint(bodyBlock);
-    // llvm::Value* result = emit_expression(method->expr);
-    
-    // // 5.3 创建返回指令
-    // if (returnType->isVoidTy()) {
-    //     builder.CreateRetVoid();
-    // } else {
-    //     // 确保结果类型匹配返回类型
-    //     if (result->getType() != returnType) {
-    //         // 可能需要类型转换
-    //         result = builder.CreateBitCast(result, returnType, "result");
-    //     }
-    //     builder.CreateRet(result);
-    // }
+
     return func;
 }
 
@@ -653,7 +666,7 @@ llvm::Value *emit_feature(Feature feature)
 {
     if (feature == nullptr) return nullptr;
     if (auto* method = dynamic_cast<method_class*>(feature)) {
-        return emit_method_class(method);
+        return emit_method_define(method);
     } else if (auto* attr = dynamic_cast<attr_class*>(feature)) {
         return emit_attr_class(attr);
     }
@@ -1084,7 +1097,7 @@ llvm::Value *emit_case(Case _case)
 llvm::Value *emit_program_class(program_class *program)
 {
     if (program == nullptr) return nullptr;
-
+    
     Classes classes = program->classes;
     for(int i = classes->first(); classes->more(i); i = classes->next(i))
     {
