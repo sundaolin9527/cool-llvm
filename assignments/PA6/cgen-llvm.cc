@@ -6,13 +6,14 @@
 #include <map>
 
 using namespace llvm;
+using FormalParams = std::pair<std::vector<std::string>, std::vector<llvm::Type*>>;
 #include "cgen.h"
 llvm::Value* emit_class__class(class__class* _class);
 llvm::Value* emit_class_(Class_ class_);
-llvm::Value* emit_method_class(method_class* method);
+llvm::Value *emit_method_declare(method_class* method);
+llvm::Value* emit_method_define(method_class* method);
 llvm::Value* emit_attr_class(attr_class* attr);
 llvm::Value* emit_feature(Feature feature);
-llvm::Value* emit_formal(Formal formal);
 llvm::Value* emit_assign_class(assign_class* expr);
 llvm::Value* emit_static_dispatch_class(static_dispatch_class* expr);
 llvm::Value* emit_dispatch_class(dispatch_class* expr);
@@ -41,7 +42,7 @@ llvm::Value* emit_branch_class(branch_class* branch);
 llvm::Value* emit_case(Case _case);
 llvm::Value* emit_program_class(program_class* program);
 llvm::Value* emit_program(Program program);
-
+FormalParams emit_formals(Formals formals, llvm::Type* classType);
 LLVMContext context; // 贯穿整个流程
 Module module("MainModule", context); // 一个编译单元
 IRBuilder<> builder(context);
@@ -240,6 +241,10 @@ llvm::Value *emit_class__class(class__class* _class)
     // 创建结构体类型
     classLayout.type = llvm::StructType::create(context, structFields, className);
     
+    // 计算类大小
+    const llvm::DataLayout DL = module.getDataLayout();
+    classLayout.objectSize = DL.getTypeAllocSize(classLayout.type);
+
     //=== 阶段4：合并方法（处理继承和重写） ============================
     std::map<std::string, ClassMethodInfo> allMethods;
     std::vector<std::string> allMethodNamesInOrder;
@@ -269,9 +274,9 @@ llvm::Value *emit_class__class(class__class* _class)
     
     //=== 阶段5：生成方法函数 ==========================================
     currClassName = className;
-    classRegistry[className] = classLayout; // 先加，在emit_method_class需要用
+    classRegistry[className] = classLayout; // 先加，在emit_method_define需要用
     for (auto& methodInfo : classLayout.methods) {
-        llvm::Value *value = emit_method_class(methodInfo.method);
+        llvm::Value *value = emit_method_define(methodInfo.method);
         methodInfo.func = llvm::dyn_cast<llvm::Function>(value);
     }
     classRegistry.erase(className); // 再减，防止加错
@@ -279,7 +284,7 @@ llvm::Value *emit_class__class(class__class* _class)
     //=== 阶段6：构建虚表 ==============================================
     std::vector<llvm::Constant*> vtableEntries;
 
-    // 第一个条目：对象大小
+    // 第一个条目：对象大小(todo*)
     llvm::Constant* objectSizeConst = llvm::ConstantInt::get(
         llvm::Type::getInt32Ty(context), 
         classLayout.objectSize
@@ -548,7 +553,8 @@ llvm::Value *emit_class_(Class_ class_)
      return emit_class__class((class__class*)class_);
 }
 
-llvm::Value *emit_method_class(method_class* method)
+// 创建函数原型
+llvm::Value *emit_method_declare(method_class* method)
 {
     if (method == nullptr) return nullptr;
     // 确定返回类型
@@ -575,23 +581,9 @@ llvm::Value *emit_method_class(method_class* method)
     }
     
     // 构建参数列表
-    std::vector<llvm::Type*> paramTypes;
-    paramTypes.push_back(classLayout.type->getPointerTo());  // this指针
-    
-    for (int j = method->formals->first(); method->formals->more(j); j = method->formals->next(j)) {
-        formal_class *formal = dynamic_cast<formal_class*>(method->formals->nth(j));
-        if (formal) {
-            std::string formalTypeName = formal->type_decl->get_string();
-            llvm::Type* paramType = mapCoolTypeToLLVM(formalTypeName);
-            
-            if (formalTypeName != "Int" && formalTypeName != "Bool" && formalTypeName != "String") {
-                if (!paramType->isPointerTy()) {
-                    paramType = paramType->getPointerTo();
-                }
-            }
-            paramTypes.push_back(paramType);
-        }
-    }
+    FormalParams params = emit_formals(method->formals, classLayout.type);
+    std::vector<std::string>& paramNames = params.first;
+    std::vector<llvm::Type*>& paramTypes = params.second;
     
     llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
     
@@ -603,66 +595,69 @@ llvm::Value *emit_method_class(method_class* method)
         funcName,
         module
     );
-    
-    // ========== 创建函数体入口 ==========
-    //第一个形参是this
-    auto argIt = func->arg_begin();
-    if (argIt != func->arg_end()) {
-        argIt->setName("this");
-        ++argIt;  // 移动到第一个形式参数
-    }
-    // 遍历所有形式参数
-    for (int j = method->formals->first(); method->formals->more(j); j = method->formals->next(j)) {
-        // 获取形式参数
-        formal_class *formal = dynamic_cast<formal_class*>(method->formals->nth(j));
-        if (formal && argIt != func->arg_end()) {
-            // 设置参数名称
-            argIt->setName(formal->name->get_string());
-            ++argIt;
-        }
-    }
 
-    // 创建基本块（函数体入口）
-    llvm::BasicBlock* entryBlock = llvm::BasicBlock::Create(
-        context,
-        "entry",
-        func
-    );
-    builder.SetInsertPoint(entryBlock);
+    assert(func->arg_size() == paramNames.size() && 
+        "Function argument count doesn't match parameter names!");
 
-    // 为参数创建alloca指令
+    // 设置参数名称
+    size_t i = 0;
     for (auto& arg : func->args()) {
-        // 创建alloca指令分配空间
-        llvm::AllocaInst* alloca = builder.CreateAlloca(
-            arg.getType(),
-            nullptr,
-            arg.getName() + ".addr"
-        );
-        // 存储参数值到分配的空间
-        builder.CreateStore(&arg, alloca);
+        arg.setName(paramNames[i++]);
     }
-    
-    // 5.2 生成方法体的表达式/语句
-    llvm::BasicBlock* bodyBlock = llvm::BasicBlock::Create(
-        context,
-        "body",
-        func
-    );
-    builder.CreateBr(bodyBlock);
-    builder.SetInsertPoint(bodyBlock);
-    // llvm::Value* result = emit_expression(method->expr);
-    
-    // // 5.3 创建返回指令
-    // if (returnType->isVoidTy()) {
-    //     builder.CreateRetVoid();
-    // } else {
-    //     // 确保结果类型匹配返回类型
-    //     if (result->getType() != returnType) {
-    //         // 可能需要类型转换
-    //         result = builder.CreateBitCast(result, returnType, "result");
-    //     }
-    //     builder.CreateRet(result);
-    // }
+
+    return func;
+}
+
+llvm::Value *emit_method_define(method_class* method)
+{
+    if (method == nullptr) return nullptr;
+
+    llvm::Function* func = llvm::dyn_cast<llvm::Function>(emit_method_declare(method));
+    // ========== 创建函数体入口 ==========
+    if (method->expr != nullptr){
+        // 创建基本块（函数体入口）
+        llvm::BasicBlock* entryBlock = llvm::BasicBlock::Create(
+            context,
+            "entry",
+            func
+        );
+        builder.SetInsertPoint(entryBlock);
+
+        // 为参数创建alloca指令
+        for (auto& arg : func->args()) {
+            // 创建alloca指令分配空间
+            llvm::AllocaInst* alloca = builder.CreateAlloca(
+                arg.getType(),
+                nullptr,
+                arg.getName() + ".addr"
+            );
+            // 存储参数值到分配的空间
+            builder.CreateStore(&arg, alloca);
+        }
+        
+        // 5.2 生成方法体的表达式/语句
+        llvm::BasicBlock* bodyBlock = llvm::BasicBlock::Create(
+            context,
+            "body",
+            func
+        );
+        builder.CreateBr(bodyBlock);
+        builder.SetInsertPoint(bodyBlock);
+        // llvm::Value* result = emit_expression(method->expr);
+        
+        // // 5.3 创建返回指令
+        // if (returnType->isVoidTy()) {
+        //     builder.CreateRetVoid();
+        // } else {
+        //     // 确保结果类型匹配返回类型
+        //     if (result->getType() != returnType) {
+        //         // 可能需要类型转换
+        //         result = builder.CreateBitCast(result, returnType, "result");
+        //     }
+        //     builder.CreateRet(result);
+        // }
+    }
+
     return func;
 }
 
@@ -675,16 +670,48 @@ llvm::Value *emit_feature(Feature feature)
 {
     if (feature == nullptr) return nullptr;
     if (auto* method = dynamic_cast<method_class*>(feature)) {
-        return emit_method_class(method);
+        return emit_method_define(method);
     } else if (auto* attr = dynamic_cast<attr_class*>(feature)) {
         return emit_attr_class(attr);
     }
     return nullptr;
 }
 
-llvm::Value *emit_formal(Formal formal)
+FormalParams emit_formals(Formals formals, llvm::Type* classType)
 {
-    if (formal == nullptr) return nullptr; 
+    std::vector<std::string> paramNames;
+    std::vector<llvm::Type*> paramTypes;
+
+    paramNames.push_back("this");
+    paramTypes.push_back(classType->getPointerTo());
+    
+    if (formals == nullptr) {
+        return {paramNames, paramTypes};
+    }
+    
+
+    for (int i = formals->first(); formals->more(i); i = formals->next(i)) {
+        
+        formal_class* formal = dynamic_cast<formal_class*>(formals->nth(i));
+        if (!formal) continue;
+        
+        std::string paramName = formal->name->get_string();
+        std::string paramTypeName = formal->type_decl->get_string();
+        llvm::Type* paramType = mapCoolTypeToLLVM(paramTypeName);
+        
+        assert(paramType != nullptr && "mapCoolTypeToLLVM returned null");
+        
+        if (paramTypeName != "Int" && paramTypeName != "Bool" && paramTypeName != "String") {
+            if (!paramType->isPointerTy()) {
+                paramType = paramType->getPointerTo();
+            }
+        }
+
+        paramNames.push_back(paramName);
+        paramTypes.push_back(paramType);
+    }
+    
+    return {paramNames, paramTypes};
 }
 
 llvm::Value *emit_assign_class(assign_class* expression)
@@ -1074,7 +1101,7 @@ llvm::Value *emit_case(Case _case)
 llvm::Value *emit_program_class(program_class *program)
 {
     if (program == nullptr) return nullptr;
-
+    
     Classes classes = program->classes;
     for(int i = classes->first(); classes->more(i); i = classes->next(i))
     {
