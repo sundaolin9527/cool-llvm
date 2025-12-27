@@ -6,13 +6,13 @@
 #include <map>
 
 using namespace llvm;
+using FormalParams = std::pair<std::vector<std::string>, std::vector<llvm::Type*>>;
 #include "cgen.h"
 llvm::Value* emit_class__class(class__class* _class);
 llvm::Value* emit_class_(Class_ class_);
 llvm::Value* emit_method_class(method_class* method);
 llvm::Value* emit_attr_class(attr_class* attr);
 llvm::Value* emit_feature(Feature feature);
-llvm::Value* emit_formal(Formal formal);
 llvm::Value* emit_assign_class(assign_class* expr);
 llvm::Value* emit_static_dispatch_class(static_dispatch_class* expr);
 llvm::Value* emit_dispatch_class(dispatch_class* expr);
@@ -41,7 +41,7 @@ llvm::Value* emit_branch_class(branch_class* branch);
 llvm::Value* emit_case(Case _case);
 llvm::Value* emit_program_class(program_class* program);
 llvm::Value* emit_program(Program program);
-
+FormalParams emit_formals(Formals formals, llvm::Type* classType);
 LLVMContext context; // 贯穿整个流程
 Module module("MainModule", context); // 一个编译单元
 IRBuilder<> builder(context);
@@ -575,23 +575,9 @@ llvm::Value *emit_method_class(method_class* method)
     }
     
     // 构建参数列表
-    std::vector<llvm::Type*> paramTypes;
-    paramTypes.push_back(classLayout.type->getPointerTo());  // this指针
-    
-    for (int j = method->formals->first(); method->formals->more(j); j = method->formals->next(j)) {
-        formal_class *formal = dynamic_cast<formal_class*>(method->formals->nth(j));
-        if (formal) {
-            std::string formalTypeName = formal->type_decl->get_string();
-            llvm::Type* paramType = mapCoolTypeToLLVM(formalTypeName);
-            
-            if (formalTypeName != "Int" && formalTypeName != "Bool" && formalTypeName != "String") {
-                if (!paramType->isPointerTy()) {
-                    paramType = paramType->getPointerTo();
-                }
-            }
-            paramTypes.push_back(paramType);
-        }
-    }
+    FormalParams params = emit_formals(method->formals, classLayout.type);
+    std::vector<std::string>& paramNames = params.first;
+    std::vector<llvm::Type*>& paramTypes = params.second;
     
     llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
     
@@ -605,21 +591,13 @@ llvm::Value *emit_method_class(method_class* method)
     );
     
     // ========== 创建函数体入口 ==========
-    //第一个形参是this
-    auto argIt = func->arg_begin();
-    if (argIt != func->arg_end()) {
-        argIt->setName("this");
-        ++argIt;  // 移动到第一个形式参数
-    }
-    // 遍历所有形式参数
-    for (int j = method->formals->first(); method->formals->more(j); j = method->formals->next(j)) {
-        // 获取形式参数
-        formal_class *formal = dynamic_cast<formal_class*>(method->formals->nth(j));
-        if (formal && argIt != func->arg_end()) {
-            // 设置参数名称
-            argIt->setName(formal->name->get_string());
-            ++argIt;
-        }
+    assert(func->arg_size() == paramNames.size() && 
+        "Function argument count doesn't match parameter names!");
+
+    // 设置参数名称
+    size_t i = 0;
+    for (auto& arg : func->args()) {
+        arg.setName(paramNames[i++]);
     }
 
     // 创建基本块（函数体入口）
@@ -682,9 +660,41 @@ llvm::Value *emit_feature(Feature feature)
     return nullptr;
 }
 
-llvm::Value *emit_formal(Formal formal)
+FormalParams emit_formals(Formals formals, llvm::Type* classType)
 {
-    if (formal == nullptr) return nullptr; 
+    std::vector<std::string> paramNames;
+    std::vector<llvm::Type*> paramTypes;
+
+    paramNames.push_back("this");
+    paramTypes.push_back(classType->getPointerTo());
+    
+    if (formals == nullptr) {
+        return {paramNames, paramTypes};
+    }
+    
+
+    for (int i = formals->first(); formals->more(i); i = formals->next(i)) {
+        
+        formal_class* formal = dynamic_cast<formal_class*>(formals->nth(i));
+        if (!formal) continue;
+        
+        std::string paramName = formal->name->get_string();
+        std::string paramTypeName = formal->type_decl->get_string();
+        llvm::Type* paramType = mapCoolTypeToLLVM(paramTypeName);
+        
+        assert(paramType != nullptr && "mapCoolTypeToLLVM returned null");
+        
+        if (paramTypeName != "Int" && paramTypeName != "Bool" && paramTypeName != "String") {
+            if (!paramType->isPointerTy()) {
+                paramType = paramType->getPointerTo();
+            }
+        }
+
+        paramNames.push_back(paramName);
+        paramTypes.push_back(paramType);
+    }
+    
+    return {paramNames, paramTypes};
 }
 
 llvm::Value *emit_assign_class(assign_class* expression)
