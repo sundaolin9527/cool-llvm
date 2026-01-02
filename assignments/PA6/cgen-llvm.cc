@@ -10,8 +10,7 @@ using FormalParams = std::pair<std::vector<std::string>, std::vector<llvm::Type*
 #include "cgen.h"
 llvm::Value* emit_class__class(class__class* _class);
 llvm::Value* emit_class_(Class_ class_);
-llvm::Value *emit_method_declare(method_class* method);
-llvm::Value* emit_method_define(method_class* method);
+llvm::Value* emit_method_class(method_class* method);
 llvm::Value* emit_attr_class(attr_class* attr);
 llvm::Value* emit_feature(Feature feature);
 llvm::Value* emit_assign_class(assign_class* expr);
@@ -274,9 +273,9 @@ llvm::Value *emit_class__class(class__class* _class)
     
     //=== 阶段5：生成方法函数 ==========================================
     currClassName = className;
-    classRegistry[className] = classLayout; // 先加，在emit_method_define需要用
+    classRegistry[className] = classLayout; // 先加，在emit_method_class需要用
     for (auto& methodInfo : classLayout.methods) {
-        llvm::Value *value = emit_method_define(methodInfo.method);
+        llvm::Value *value = emit_method_class(methodInfo.method);
         methodInfo.func = llvm::dyn_cast<llvm::Function>(value);
     }
     classRegistry.erase(className); // 再减，防止加错
@@ -553,10 +552,10 @@ llvm::Value *emit_class_(Class_ class_)
      return emit_class__class((class__class*)class_);
 }
 
-// 创建函数原型
-llvm::Value *emit_method_declare(method_class* method)
+llvm::Value *emit_method_class(method_class* method)
 {
     if (method == nullptr) return nullptr;
+
     // 确定返回类型
     std::string returnTypeName = method->return_type->get_string();
     llvm::Type* returnType = nullptr;
@@ -604,15 +603,6 @@ llvm::Value *emit_method_declare(method_class* method)
     for (auto& arg : func->args()) {
         arg.setName(paramNames[i++]);
     }
-
-    return func;
-}
-
-llvm::Value *emit_method_define(method_class* method)
-{
-    if (method == nullptr) return nullptr;
-
-    llvm::Function* func = llvm::dyn_cast<llvm::Function>(emit_method_declare(method));
     // ========== 创建函数体入口 ==========
     if (method->expr != nullptr){
         // 创建基本块（函数体入口）
@@ -643,19 +633,19 @@ llvm::Value *emit_method_define(method_class* method)
         );
         builder.CreateBr(bodyBlock);
         builder.SetInsertPoint(bodyBlock);
-        // llvm::Value* result = emit_expression(method->expr);
+        llvm::Value* result = emit_expression(method->expr);
         
-        // // 5.3 创建返回指令
-        // if (returnType->isVoidTy()) {
-        //     builder.CreateRetVoid();
-        // } else {
-        //     // 确保结果类型匹配返回类型
-        //     if (result->getType() != returnType) {
-        //         // 可能需要类型转换
-        //         result = builder.CreateBitCast(result, returnType, "result");
-        //     }
-        //     builder.CreateRet(result);
-        // }
+        // 5.3 创建返回指令
+        if (returnType->isVoidTy()) {
+            builder.CreateRetVoid();
+        } else {
+            // 确保结果类型匹配返回类型
+            if (result->getType() != returnType) {
+                // 可能需要类型转换
+                result = builder.CreateBitCast(result, returnType, "result");
+            }
+            builder.CreateRet(result);
+        }
     }
 
     return func;
@@ -670,7 +660,7 @@ llvm::Value *emit_feature(Feature feature)
 {
     if (feature == nullptr) return nullptr;
     if (auto* method = dynamic_cast<method_class*>(feature)) {
-        return emit_method_define(method);
+        return emit_method_class(method);
     } else if (auto* attr = dynamic_cast<attr_class*>(feature)) {
         return emit_attr_class(attr);
     }
