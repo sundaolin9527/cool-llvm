@@ -554,6 +554,7 @@ llvm::Value *emit_class_(Class_ class_)
 
 llvm::Value *emit_method_class(method_class* method)
 {
+    std::cout << "emit_method_class" << std::endl;
     if (method == nullptr) return nullptr;
 
     // 确定返回类型
@@ -653,6 +654,7 @@ llvm::Value *emit_method_class(method_class* method)
 
 llvm::Value *emit_attr_class(attr_class* attr)
 {
+    std::cout << "emit_attr_class" << std::endl;
     if (attr == nullptr) return nullptr;
 }
 
@@ -706,21 +708,25 @@ FormalParams emit_formals(Formals formals, llvm::Type* classType)
 
 llvm::Value *emit_assign_class(assign_class* expression)
 {
+    std::cout << "emit_assign_class" << std::endl;
     if (expression == nullptr) return nullptr;
 }
 
 llvm::Value *emit_static_dispatch_class(static_dispatch_class* expression)
 {
+    std::cout << "emit_static_dispatch_class" << std::endl;
     if (expression == nullptr) return nullptr;
 }
 
 llvm::Value *emit_dispatch_class(dispatch_class* expression)
 {
+    std::cout << "emit_dispatch_class" << std::endl;
     if (expression == nullptr) return nullptr; 
 }
 
 llvm::Value *emit_cond_class(cond_class* expression)
 {
+    std::cout << "emit_cond_class" << std::endl;
     if (expression == nullptr) return nullptr;
 
     llvm::Function* current_function = builder.GetInsertBlock()->getParent();
@@ -845,6 +851,7 @@ llvm::Value *emit_cond_class(cond_class* expression)
 
 llvm::Value *emit_loop_class(loop_class* expression)
 {
+    std::cout << "emit_loop_class" << std::endl;
     if (expression == nullptr) return nullptr;
 
     Function *TheFunction = builder.GetInsertBlock()->getParent();
@@ -875,11 +882,13 @@ llvm::Value *emit_loop_class(loop_class* expression)
 
 llvm::Value *emit_typcase_class(typcase_class* expression)
 {
+    std::cout << "emit_typcase_class" << std::endl;
     if (expression == nullptr) return nullptr;
 }
 
 llvm::Value *emit_block_class(block_class* expression)
 {
+    std::cout << "emit_block_class" << std::endl;
     if (expression == nullptr) return nullptr;
     
     Expressions body = expression->body;
@@ -903,10 +912,12 @@ llvm::Value *emit_block_class(block_class* expression)
 
 llvm::Value *emit_let_class(let_class* expression)
 {
+    std::cout << "emit_let_class" << std::endl;
     if (expression == nullptr) return nullptr;
 }
 
 llvm::Value* emit_plus_class(plus_class* expression) {
+    std::cout << "emit_plus_class" << std::endl;
     if (expression == nullptr) return nullptr;
     llvm::Value* left_val = emit_expression(expression->e1);
     llvm::Value* right_val = emit_expression(expression->e2);
@@ -914,6 +925,7 @@ llvm::Value* emit_plus_class(plus_class* expression) {
 }
 
 llvm::Value* emit_sub_class(sub_class* expression) {
+    std::cout << "emit_sub_class" << std::endl;
     if (expression == nullptr) return nullptr;
     llvm::Value* left_val = emit_expression(expression->e1);
     llvm::Value* right_val = emit_expression(expression->e2);
@@ -922,6 +934,7 @@ llvm::Value* emit_sub_class(sub_class* expression) {
 }
 
 llvm::Value* emit_mul_class(mul_class* expression) {
+    std::cout << "emit_mul_class" << std::endl;
     if (expression == nullptr) return nullptr;
     llvm::Value* left_val = emit_expression(expression->e1);
     llvm::Value* right_val = emit_expression(expression->e2);
@@ -930,6 +943,7 @@ llvm::Value* emit_mul_class(mul_class* expression) {
 }
 
 llvm::Value* emit_divide_class(divide_class* expression) {
+    std::cout << "emit_divide_class" << std::endl;
     if (expression == nullptr) return nullptr;
     llvm::Value* left_val = emit_expression(expression->e1);
     llvm::Value* right_val = emit_expression(expression->e2);
@@ -938,6 +952,7 @@ llvm::Value* emit_divide_class(divide_class* expression) {
 }
 
 llvm::Value* emit_neg_class(neg_class* expression) {
+    std::cout << "emit_neg_class" << std::endl;
     if (expression == nullptr) return nullptr;
     llvm::Value* val = emit_expression(expression->e1);
     
@@ -946,6 +961,7 @@ llvm::Value* emit_neg_class(neg_class* expression) {
 }
 
 llvm::Value* emit_lt_class(lt_class* expression) {
+    std::cout << "emit_lt_class" << std::endl;
     if (expression == nullptr) return nullptr;
     llvm::Value* left_val = emit_expression(expression->e1);
     llvm::Value* right_val = emit_expression(expression->e2);
@@ -954,6 +970,7 @@ llvm::Value* emit_lt_class(lt_class* expression) {
 }
 
 llvm::Value* emit_eq_class(eq_class* expression) {
+    std::cout << "emit_leq_class" << std::endl;
     if (expression == nullptr) return nullptr;
     llvm::Value* left_val = emit_expression(expression->e1);
     llvm::Value* right_val = emit_expression(expression->e2);
@@ -962,6 +979,7 @@ llvm::Value* emit_eq_class(eq_class* expression) {
 }
 
 llvm::Value* emit_leq_class(leq_class* expression) {
+    std::cout << "emit_leq_class" << std::endl;
     if (expression == nullptr) return nullptr;
     llvm::Value* left_val = emit_expression(expression->e1);
     llvm::Value* right_val = emit_expression(expression->e2);
@@ -970,6 +988,7 @@ llvm::Value* emit_leq_class(leq_class* expression) {
 }
 
 llvm::Value* emit_comp_class(comp_class* expression) {
+    std::cout << "emit_comp_class" << std::endl;
     if (expression == nullptr) return nullptr;
 
     llvm::Value* val = emit_expression(expression->e1);
@@ -977,6 +996,7 @@ llvm::Value* emit_comp_class(comp_class* expression) {
 }
 
 llvm::Value* emit_int_const_class(int_const_class* expression) {
+    std::cout << "emit_int_const_class" << std::endl;
     if (expression == nullptr || expression->token == nullptr) {
         return nullptr;
     }
@@ -987,15 +1007,18 @@ llvm::Value* emit_int_const_class(int_const_class* expression) {
 
 llvm::Value* emit_bool_const_class(bool_const_class* expression) 
 {
+    std::cout << "emit_bool_const_class" << std::endl;
     if (expression == nullptr) return nullptr;
     return llvm::ConstantInt::get(builder.getInt1Ty(), expression->val ? 1 : 0);
 }
 
 llvm::Value* emit_string_const_class(string_const_class* expression) {
+    std::cout << "emit_string_const_class" << std::endl;
     if (expression == nullptr) return nullptr;
 }
 
 llvm::Value* emit_isvoid_class(isvoid_class* expression) {
+    std::cout << "emit_isvoid_class" << std::endl;
     if (expression == nullptr) return nullptr;
 
     llvm::Value* val = emit_expression(expression->e1);
@@ -1005,11 +1028,13 @@ llvm::Value* emit_isvoid_class(isvoid_class* expression) {
 }
 
 llvm::Value* emit_no_expr_class(no_expr_class* expression) {
+    std::cout << "emit_no_expr_class" << std::endl;
     if (expression == nullptr) return nullptr;
     return llvm::Constant::getNullValue(builder.getVoidTy());
 }
 
 llvm::Value* emit_object_class(object_class* expression) {
+    std::cout << "emit_object_class" << std::endl;
     if (expression == nullptr) return nullptr;
 
 }
@@ -1073,12 +1098,16 @@ llvm::Value* emit_expression(Expression e) {
     else if (auto* expr = dynamic_cast<static_dispatch_class*>(e)) {
         return emit_static_dispatch_class(expr);
     }
+    else if (auto* expr = dynamic_cast<cond_class*>(e)) {
+        return emit_cond_class(expr);
+    }
     std::cerr << "Error: Unknown expression type" << std::endl;
     return nullptr;
 }
 
 llvm::Value *emit_branch_class(branch_class *branch)
 {
+    std::cout << "emit_branch_class" << std::endl;
      if (branch == nullptr) return nullptr;
 
 }
@@ -1090,6 +1119,7 @@ llvm::Value *emit_case(Case _case)
 
 llvm::Value *emit_program_class(program_class *program)
 {
+    std::cout << "emit_program_class" << std::endl;
     if (program == nullptr) return nullptr;
     
     Classes classes = program->classes;
