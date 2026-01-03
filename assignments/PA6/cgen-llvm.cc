@@ -305,17 +305,9 @@ llvm::Value *emit_class__class(class__class* _class)
             allMethodNamesInOrder.push_back(methodInfo.name);
         }
     }
-    
-    //=== 阶段5：生成方法函数 ==========================================
-    currClassName = className;
-    classRegistry[className] = classLayout; // 先加，在emit_method_class需要用
-    for (auto& methodInfo : classLayout.methods) {
-        llvm::Value *value = emit_method_class(methodInfo.method);
-        methodInfo.func = llvm::dyn_cast<llvm::Function>(value);
-    }
-    classRegistry.erase(className); // 再减，防止加错
 
-    //=== 阶段6：构建虚表 ==============================================
+    currClassName = className;
+    //=== 阶段5：构建虚表 ==============================================
     std::vector<llvm::Constant*> vtableEntries;
 
     // 第一个条目：对象大小(todo*)
@@ -475,11 +467,11 @@ llvm::Value *emit_class__class(class__class* _class)
         vtableName
     );
     
-    //=== 阶段7：分配class tag ========================================
+    //=== 阶段6：分配class tag ========================================
     static uint32_t nextClassTag = 1;
     classLayout.classTag = nextClassTag++;
     
-    //=== 阶段8：生成构造函数 ==========================================
+    //=== 阶段7：生成构造函数 ==========================================
     llvm::FunctionType* ctorType = llvm::FunctionType::get(
         llvm::Type::getVoidTy(context),
         {classLayout.type->getPointerTo()},
@@ -552,7 +544,7 @@ llvm::Value *emit_class__class(class__class* _class)
     
     builder.CreateRetVoid();
     
-    //=== 阶段9：生成new函数 ==========================================
+    //=== 阶段8：生成new函数 ==========================================
     llvm::FunctionType* newFuncType = llvm::FunctionType::get(
         classLayout.type->getPointerTo(),
         {},
@@ -582,7 +574,13 @@ llvm::Value *emit_class__class(class__class* _class)
     builder.CreateCall(classLayout.constructor, {obj});
     builder.CreateRet(obj);
 
+    //=== 阶段9：生成方法函数 ==========================================
     classRegistry[className] = classLayout;
+    for (auto& methodInfo : classLayout.methods) {
+        llvm::Value *value = emit_method_class(methodInfo.method);
+        methodInfo.func = llvm::dyn_cast<llvm::Function>(value);
+    }
+
     return classLayout.newFunc;
 }
 
@@ -1076,12 +1074,23 @@ llvm::Value* emit_object_class(object_class* expression) {
     std::cout << "emit_object_class" << std::endl;
     if (expression == nullptr) return nullptr;
     
-    // auto it = classRegistry.find(currClassName);
-    // return builder.CreateLoad(
-    //     llvm::Type::getInt32Ty(context),   // 要加载的类型
-    //     int_ptr,                           // 源指针
-    //     expression->name->get_string()
-    // );
+    auto classIt = classRegistry.find(currClassName);
+    if (classIt == classRegistry.end()) {
+        return nullptr;
+    }
+
+    ClassLayout& classLayout = classIt->second;
+
+    auto attrIt = classLayout.ownAttributes.find(expression->name->get_string());
+    if (attrIt == classLayout.ownAttributes.end()) {
+        return nullptr;
+    }
+
+    VariableInfo& varInfo = attrIt->second; 
+    if (!varInfo.value) {
+        return nullptr;
+    }
+    return builder.CreateLoad(varInfo.type,varInfo.value, expression->name->get_string());
 }
 
 llvm::Value* emit_expression(Expression e) {
