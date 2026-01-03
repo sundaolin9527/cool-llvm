@@ -114,6 +114,41 @@ void emit_llvm_ir(Program program) {
     module.print(outs(), nullptr);
 }
 
+enum VariableScope {
+    VS_MEMBER,     // 成员变量
+    VS_LOCAL,      // 局部变量
+    VS_PARAM,      // 参数
+    VS_GLOBAL      // 全局变量
+};
+
+struct VariableInfo {
+    llvm::Type* type = nullptr;
+    VariableScope scope = VS_MEMBER;
+    llvm::Value* value = nullptr; //变量值
+    
+    VariableInfo() = default;
+    VariableInfo(llvm::Type* t, VariableScope s, llvm::Value* v)
+        : type(t), scope(s), value(v) {}
+    
+    static VariableInfo create(llvm::Type* t, VariableScope s, llvm::Value* v = nullptr) {
+        return VariableInfo(t, s, v);
+    }
+    static VariableInfo createMember(llvm::Type* t, llvm::Value* address = nullptr) {
+        return create(t, VS_MEMBER, address);
+    }
+    static VariableInfo createLocal(llvm::Type* t, llvm::Value* allocaInst = nullptr) {
+        return create(t, VS_LOCAL, allocaInst);
+    }
+    static VariableInfo createParam(llvm::Type* t, llvm::Value* paramValue = nullptr) {
+        return create(t, VS_PARAM, paramValue);
+    }
+    static VariableInfo createGlobal(llvm::Type* t, llvm::Value* globalVar = nullptr) {
+        return create(t, VS_GLOBAL, globalVar);
+    }
+    void updateValue(llvm::Value* newValue) {
+        value = newValue;
+    }
+};
 /**
  * 内存布局：
  * offset 0-3:   Class tag
@@ -132,7 +167,7 @@ struct ClassLayout {
     std::string name;
     std::string parent;
     llvm::StructType* type;
-    std::vector<std::pair<std::string, llvm::Type*>> ownAttributes; // 当前类自己的属性
+    std::map<std::string, VariableInfo> ownAttributes; // 当前类自己的属性
     std::vector<ClassMethodInfo> methods;
     std::vector<std::string> methodNamesInOrder;
     llvm::GlobalVariable* vtable;
@@ -144,7 +179,7 @@ struct ClassLayout {
 
 struct InheritanceInfo {
     std::vector<ClassLayout*> chain; // 从Object到当前类的继承链
-    std::vector<std::pair<std::string, llvm::Type*>> allAttributes; // 所有属性（包含继承的）
+    std::map<std::string, VariableInfo> allAttributes; // 所有属性（包含继承的）
     std::map<std::string, ClassMethodInfo> allMethods; // 所有方法（包含继承的）
 };
 
@@ -183,8 +218,7 @@ llvm::Value *emit_class__class(class__class* _class)
                     type = type->getPointerTo();
                 }
             }
-            
-            classLayout.ownAttributes.push_back({attrName, type});
+            classLayout.ownAttributes.emplace(attrName, VariableInfo::createMember(type));
         }
         else if (method_class *method = dynamic_cast<method_class*>(feature)) 
         {
@@ -234,7 +268,8 @@ llvm::Value *emit_class__class(class__class* _class)
     
     // 添加当前类自己的属性
     for (const auto& attr : classLayout.ownAttributes) {
-        structFields.push_back(attr.second);
+        const VariableInfo& info = attr.second;    // 变量信息
+        structFields.push_back(info.type);
     }
     
     // 创建结构体类型
@@ -498,8 +533,10 @@ llvm::Value *emit_class__class(class__class* _class)
     
     // 初始化当前类自己的属性
     unsigned startIndex = 3 + (parentType ? 1 : 0); // 3个头字段 + (父类结构体)
-    for (unsigned i = 0; i < classLayout.ownAttributes.size(); i++) {
-        llvm::Type* fieldType = classLayout.ownAttributes[i].second;
+    unsigned i = 0;
+    for (auto it = classLayout.ownAttributes.begin();it != classLayout.ownAttributes.end(); ++it, ++i) {
+        VariableInfo& varInfo = it->second;
+        llvm::Type* fieldType = varInfo.type;
         llvm::Value* fieldAddr = builder.CreateStructGEP(classLayout.type, thisPtr, startIndex + i);
         
         if (fieldType->isIntegerTy(32)) {
@@ -509,6 +546,8 @@ llvm::Value *emit_class__class(class__class* _class)
         } else if (fieldType->isPointerTy()) {
             builder.CreateStore(llvm::Constant::getNullValue(fieldType), fieldAddr);
         }
+
+        varInfo.updateValue(fieldAddr);
     }
     
     builder.CreateRetVoid();
@@ -1036,7 +1075,13 @@ llvm::Value* emit_no_expr_class(no_expr_class* expression) {
 llvm::Value* emit_object_class(object_class* expression) {
     std::cout << "emit_object_class" << std::endl;
     if (expression == nullptr) return nullptr;
-
+    
+    // auto it = classRegistry.find(currClassName);
+    // return builder.CreateLoad(
+    //     llvm::Type::getInt32Ty(context),   // 要加载的类型
+    //     int_ptr,                           // 源指针
+    //     expression->name->get_string()
+    // );
 }
 
 llvm::Value* emit_expression(Expression e) {
