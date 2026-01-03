@@ -4,10 +4,10 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/Support/raw_ostream.h>
 #include <map>
+#include "cgen.h"
 
 using namespace llvm;
 using FormalParams = std::pair<std::vector<std::string>, std::vector<llvm::Type*>>;
-#include "cgen.h"
 llvm::Value* emit_class__class(class__class* _class);
 llvm::Value* emit_class_(Class_ class_);
 llvm::Value* emit_method_class(method_class* method);
@@ -42,6 +42,76 @@ llvm::Value* emit_case(Case _case);
 llvm::Value* emit_program_class(program_class* program);
 llvm::Value* emit_program(Program program);
 FormalParams emit_formals(Formals formals, llvm::Type* classType);
+enum VariableScope {
+    VS_MEMBER,     // 成员变量
+    VS_LOCAL,      // 局部变量
+    VS_PARAM,      // 参数
+    VS_GLOBAL      // 全局变量
+};
+
+struct VariableInfo {
+    llvm::Type* type = nullptr;
+    VariableScope scope = VS_MEMBER;
+    llvm::Value* value = nullptr; //变量值
+    
+    VariableInfo() = default;
+    VariableInfo(llvm::Type* t, VariableScope s, llvm::Value* v)
+        : type(t), scope(s), value(v) {}
+    
+    static VariableInfo create(llvm::Type* t, VariableScope s, llvm::Value* v = nullptr) {
+        return VariableInfo(t, s, v);
+    }
+    static VariableInfo createMember(llvm::Type* t, llvm::Value* address = nullptr) {
+        return create(t, VS_MEMBER, address);
+    }
+    static VariableInfo createLocal(llvm::Type* t, llvm::Value* allocaInst = nullptr) {
+        return create(t, VS_LOCAL, allocaInst);
+    }
+    static VariableInfo createParam(llvm::Type* t, llvm::Value* paramValue = nullptr) {
+        return create(t, VS_PARAM, paramValue);
+    }
+    static VariableInfo createGlobal(llvm::Type* t, llvm::Value* globalVar = nullptr) {
+        return create(t, VS_GLOBAL, globalVar);
+    }
+    void updateValue(llvm::Value* newValue) {
+        value = newValue;
+    }
+};
+
+VariableInfo* findVariable(const std::string& className, const std::string& varName);
+
+struct ClassMethodInfo {
+    std::string name;
+    method_class* method;
+    llvm::Function* func;
+    int vtableIndex;
+};
+
+struct ClassLayout {
+    std::string name;
+    std::string parent;
+    llvm::StructType* type;
+    std::map<std::string, VariableInfo> ownAttributes; // 当前类自己的属性
+    std::vector<ClassMethodInfo> methods;
+    std::vector<std::string> methodNamesInOrder;
+    llvm::GlobalVariable* vtable;
+    llvm::Function* constructor;
+    llvm::Function* newFunc;
+    uint32_t classTag;
+    uint32_t objectSize;
+};
+
+struct InheritanceInfo {
+    std::vector<ClassLayout*> chain; // 从Object到当前类的继承链
+    std::map<std::string, VariableInfo> allAttributes; // 所有属性（包含继承的）
+    std::map<std::string, ClassMethodInfo> allMethods; // 所有方法（包含继承的）
+};
+
+// 全局类注册表
+std::map<std::string, ClassLayout> classRegistry;
+// 当前类的类名, 代码结构后续优化
+std::string currClassName = "";
+
 LLVMContext context; // 贯穿整个流程
 Module module("MainModule", context); // 一个编译单元
 IRBuilder<> builder(context);
@@ -114,41 +184,6 @@ void emit_llvm_ir(Program program) {
     module.print(outs(), nullptr);
 }
 
-enum VariableScope {
-    VS_MEMBER,     // 成员变量
-    VS_LOCAL,      // 局部变量
-    VS_PARAM,      // 参数
-    VS_GLOBAL      // 全局变量
-};
-
-struct VariableInfo {
-    llvm::Type* type = nullptr;
-    VariableScope scope = VS_MEMBER;
-    llvm::Value* value = nullptr; //变量值
-    
-    VariableInfo() = default;
-    VariableInfo(llvm::Type* t, VariableScope s, llvm::Value* v)
-        : type(t), scope(s), value(v) {}
-    
-    static VariableInfo create(llvm::Type* t, VariableScope s, llvm::Value* v = nullptr) {
-        return VariableInfo(t, s, v);
-    }
-    static VariableInfo createMember(llvm::Type* t, llvm::Value* address = nullptr) {
-        return create(t, VS_MEMBER, address);
-    }
-    static VariableInfo createLocal(llvm::Type* t, llvm::Value* allocaInst = nullptr) {
-        return create(t, VS_LOCAL, allocaInst);
-    }
-    static VariableInfo createParam(llvm::Type* t, llvm::Value* paramValue = nullptr) {
-        return create(t, VS_PARAM, paramValue);
-    }
-    static VariableInfo createGlobal(llvm::Type* t, llvm::Value* globalVar = nullptr) {
-        return create(t, VS_GLOBAL, globalVar);
-    }
-    void updateValue(llvm::Value* newValue) {
-        value = newValue;
-    }
-};
 /**
  * 内存布局：
  * offset 0-3:   Class tag
@@ -156,37 +191,6 @@ struct VariableInfo {
  * offset 8-15:  Dispatch pointer (指向函数指针数组)
  * offset 16-...: Attributes (先基类后派生类)
  */
-struct ClassMethodInfo {
-    std::string name;
-    method_class* method;
-    llvm::Function* func;
-    int vtableIndex;
-};
-
-struct ClassLayout {
-    std::string name;
-    std::string parent;
-    llvm::StructType* type;
-    std::map<std::string, VariableInfo> ownAttributes; // 当前类自己的属性
-    std::vector<ClassMethodInfo> methods;
-    std::vector<std::string> methodNamesInOrder;
-    llvm::GlobalVariable* vtable;
-    llvm::Function* constructor;
-    llvm::Function* newFunc;
-    uint32_t classTag;
-    uint32_t objectSize;
-};
-
-struct InheritanceInfo {
-    std::vector<ClassLayout*> chain; // 从Object到当前类的继承链
-    std::map<std::string, VariableInfo> allAttributes; // 所有属性（包含继承的）
-    std::map<std::string, ClassMethodInfo> allMethods; // 所有方法（包含继承的）
-};
-
-// 全局类注册表
-std::map<std::string, ClassLayout> classRegistry;
-// 当前类的类名, 代码结构后续优化
-std::string currClassName = "";
 llvm::Value *emit_class__class(class__class* _class)
 {
     if (_class == nullptr) return nullptr;
@@ -541,7 +545,7 @@ llvm::Value *emit_class__class(class__class* _class)
 
         varInfo.updateValue(fieldAddr);
     }
-    
+
     builder.CreateRetVoid();
     
     //=== 阶段8：生成new函数 ==========================================
@@ -747,6 +751,25 @@ llvm::Value *emit_assign_class(assign_class* expression)
 {
     std::cout << "emit_assign_class" << std::endl;
     if (expression == nullptr) return nullptr;
+
+    llvm::Value* rhs = emit_expression(expression->expr);
+    if (!rhs) {
+        std::cerr << "Error: Failed to evaluate RHS of assignment" << std::endl;
+        return nullptr;
+    }
+    VariableInfo* varInfo = findVariable(currClassName, expression->name->get_string());
+    std::cout << expression->name->get_string() << std::endl;
+    
+    if (!varInfo) 
+    {
+        std::cerr << "Error: VariableInfo is null" << std::endl;
+        return nullptr;
+    }
+    // llvm::Type* expectedType = varInfo.type;
+    // llvm::Type* actualType = rhs->getType();
+    // 需要检测类型是否一致(todo*)
+    builder.CreateStore(rhs, varInfo->value);
+    return rhs;
 }
 
 llvm::Value *emit_static_dispatch_class(static_dispatch_class* expression)
@@ -1070,27 +1093,41 @@ llvm::Value* emit_no_expr_class(no_expr_class* expression) {
     return llvm::Constant::getNullValue(builder.getVoidTy());
 }
 
-llvm::Value* emit_object_class(object_class* expression) {
-    std::cout << "emit_object_class" << std::endl;
-    if (expression == nullptr) return nullptr;
-    
-    auto classIt = classRegistry.find(currClassName);
+VariableInfo* findVariable(const std::string& className, const std::string& varName) {
+    // 查找类
+    auto classIt = classRegistry.find(className);
     if (classIt == classRegistry.end()) {
+        std::cerr << "Class not found: " + className << std::endl;
         return nullptr;
     }
 
     ClassLayout& classLayout = classIt->second;
 
-    auto attrIt = classLayout.ownAttributes.find(expression->name->get_string());
+    // 查找变量
+    auto attrIt = classLayout.ownAttributes.find(varName);
     if (attrIt == classLayout.ownAttributes.end()) {
+        std::cerr << "Variable '" + varName + "' not found in class " + className << std::endl;
         return nullptr;
     }
 
-    VariableInfo& varInfo = attrIt->second; 
+    VariableInfo& varInfo = attrIt->second;
     if (!varInfo.value) {
+        std::cerr << "Variable '" + varName + "' has no address initialized" << std::endl;
         return nullptr;
     }
-    return builder.CreateLoad(varInfo.type,varInfo.value, expression->name->get_string());
+
+    return &varInfo;
+}
+
+llvm::Value* emit_object_class(object_class* expression) {
+    std::cout << "emit_object_class" << std::endl;
+    if (expression == nullptr) return nullptr;
+    
+    VariableInfo* varInfo = findVariable(currClassName, expression->name->get_string());
+    if (!varInfo || !varInfo->value) {
+        return nullptr;
+    }
+    return builder.CreateLoad(varInfo->type,varInfo->value, expression->name->get_string());
 }
 
 llvm::Value* emit_expression(Expression e) {
@@ -1155,7 +1192,14 @@ llvm::Value* emit_expression(Expression e) {
     else if (auto* expr = dynamic_cast<cond_class*>(e)) {
         return emit_cond_class(expr);
     }
-    std::cerr << "Error: Unknown expression type" << std::endl;
+    else if (auto* expr = dynamic_cast<block_class*>(e)) {
+        return emit_block_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<assign_class*>(e)) {
+        return emit_assign_class(expr);
+    }
+    
+    std::cerr << "Error: Unknown expression type: " << typeid(*e).name() << std::endl;
     return nullptr;
 }
 
