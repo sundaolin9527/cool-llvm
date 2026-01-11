@@ -912,32 +912,29 @@ llvm::Value *emit_cond_class(cond_class* expression)
 llvm::Value *emit_loop_class(loop_class* expression)
 {
     std::cout << "emit_loop_class" << std::endl;
-    if (expression == nullptr) return nullptr;
-
     Function *TheFunction = builder.GetInsertBlock()->getParent();
-    BasicBlock *LoopBB = BasicBlock::Create(context, "loop", TheFunction);
-    builder.CreateBr(LoopBB);
-    builder.SetInsertPoint(LoopBB);
+    BasicBlock *CondBB  = BasicBlock::Create(context, "loop.cond", TheFunction);
+    BasicBlock *BodyBB  = BasicBlock::Create(context, "loop.body", TheFunction);
+    BasicBlock *AfterBB = BasicBlock::Create(context, "loop.after", TheFunction);
 
-    // 先计算条件表达式
-    Value *predVal = emit_expression(expression->pred);
-    if (!predVal) {
-        return nullptr;
-    }
+    // entry -> cond
+    builder.CreateBr(CondBB);
+    builder.SetInsertPoint(CondBB);
 
-    BasicBlock *AfterBB = BasicBlock::Create(context, "afterloop", TheFunction);
-    BasicBlock *BodyBB = BasicBlock::Create(context, "bodyloop", TheFunction);
-    builder.CreateCondBr(predVal, LoopBB, AfterBB);
+    llvm::Value* predVal = emit_expression(expression->pred);
+    if (!predVal) return nullptr;
 
-    // 函数体执行
+    builder.CreateCondBr(predVal, BodyBB, AfterBB);
+
+    // body -> cond
     builder.SetInsertPoint(BodyBB);
-    if (!emit_expression(expression->body)) {
-        return nullptr;
-    }
-    
+    emit_expression(expression->body);
+    builder.CreateBr(CondBB); // 重新回到条件
+
+    // loop exit
     builder.SetInsertPoint(AfterBB);
-    // 根据语义返回void(是否需要有个专门的东西表示void)
-    return nullptr;
+
+    return llvm::ConstantInt::get(builder.getInt32Ty(), 0);
 }
 
 llvm::Value *emit_typcase_class(typcase_class* expression)
@@ -970,10 +967,41 @@ llvm::Value *emit_block_class(block_class* expression)
     return result;
 }
 
+
+static std::unordered_map<Symbol, std::vector<llvm::Value*>> SymbolEnv;
+
 llvm::Value *emit_let_class(let_class* expression)
 {
     std::cout << "emit_let_class" << std::endl;
     if (expression == nullptr) return nullptr;
+    Symbol id = expression->identifier;
+
+    // Todo： 这里先假定是string，实际应该是具体的类
+    llvm::Type* strType = llvm::PointerType::getInt8PtrTy(context);
+
+    llvm::AllocaInst* var = builder.CreateAlloca(strType, nullptr, id->get_string());
+
+    llvm::Value* initVal;
+    if (expression->init) {
+        initVal = emit_expression(expression->init);
+    } else {
+        initVal = llvm::ConstantPointerNull::get(
+            llvm::cast<llvm::PointerType>(strType));
+    }
+
+    builder.CreateStore(initVal, var);
+
+    // 放入符号表（进入作用域）
+    SymbolEnv[id].push_back(var);
+
+    // 计算body的时候已经存在新变量的定义了
+    llvm::Value* result = emit_expression(expression->body);
+
+    // 退出作用域
+    SymbolEnv[id].pop_back();
+    if (SymbolEnv[id].empty()) SymbolEnv.erase(id);
+
+    return result;
 }
 
 llvm::Value* emit_plus_class(plus_class* expression) {
@@ -1229,7 +1257,150 @@ llvm::Value *emit_program_class(program_class *program)
     return nullptr;
 }
 
-llvm::Value* emit_program(Program program) 
+// 一些 llvm 提供的 runtime 函数
+struct RuntimeFuncs {
+    static Function* mallocFunc;
+    static Function* memcpyFunc;
+    static Function* putsFunc;
+    static Function* getsFunc;
+
+    static void declare() {
+        if (mallocFunc && memcpyFunc && putsFunc && getsFunc) return;
+
+        PointerType* i8PtrTy = PointerType::get(Type::getInt8Ty(context), 0);
+
+        // malloc(i64) -> i8*
+        FunctionType* mallocTy = FunctionType::get(i8PtrTy, {Type::getInt64Ty(context)}, false);
+        mallocFunc = Function::Create(mallocTy, Function::ExternalLinkage, "malloc", &module);
+
+        // llvm.memcpy.p0i8.p0i8.i64
+        FunctionType* memcpyTy = FunctionType::get(
+            Type::getVoidTy(context),
+            {i8PtrTy, i8PtrTy, Type::getInt64Ty(context),
+             Type::getInt32Ty(context), Type::getInt1Ty(context)},
+            false
+        );
+        memcpyFunc = Function::Create(memcpyTy, Function::ExternalLinkage, "llvm.memcpy.p0i8.p0i8.i64", &module);
+
+        // puts
+        FunctionType* putsTy = FunctionType::get(Type::getInt32Ty(context), {i8PtrTy}, false);
+        putsFunc = Function::Create(putsTy, Function::ExternalLinkage, "puts", &module);
+
+        // gets
+        FunctionType* getsTy = FunctionType::get(i8PtrTy, {i8PtrTy}, false);
+        getsFunc = Function::Create(getsTy, Function::ExternalLinkage, "gets", &module);
+    }
+};
+Function* RuntimeFuncs::mallocFunc = nullptr;
+Function* RuntimeFuncs::memcpyFunc = nullptr;
+Function* RuntimeFuncs::putsFunc   = nullptr;
+Function* RuntimeFuncs::getsFunc   = nullptr;
+
+// Object的copy函数
+Function* create_object_copy(Module &module, LLVMContext &context, StructType* objectTy) {
+    PointerType* objPtrTy = PointerType::get(objectTy, 0);
+
+    FunctionType* copyTy = FunctionType::get(objPtrTy, {objPtrTy}, false);
+    Function* copyFunc = Function::Create(copyTy, Function::ExternalLinkage, "Object.copy", &module);
+
+    BasicBlock* entry = BasicBlock::Create(context, "entry", copyFunc);
+    IRBuilder<> builder(entry);
+
+    // 参数
+    Value* orig = &*copyFunc->args().begin();
+
+    // 分配内存
+    Value* size = ConstantInt::get(Type::getInt64Ty(context), module.getDataLayout().getTypeAllocSize(objectTy));
+    Value* newObj = builder.CreateCall(RuntimeFuncs::mallocFunc, size);
+
+    // memcpy
+    Value* origI8 = builder.CreateBitCast(orig, PointerType::get(Type::getInt8Ty(context), 0));
+    Value* newI8  = builder.CreateBitCast(newObj, PointerType::get(Type::getInt8Ty(context), 0));
+
+    builder.CreateCall(RuntimeFuncs::memcpyFunc,
+        {newI8, origI8, size,
+         ConstantInt::get(Type::getInt32Ty(context), 8),
+         ConstantInt::get(Type::getInt1Ty(context), 0)});
+
+    builder.CreateRet(newObj);
+
+    return copyFunc;
+}
+
+// 暂不考虑GC tag
+StructType* emit_object_type()
 {
+    std::vector<Type*> fields;
+    fields.push_back(Type::getInt32Ty(context));    // class tag
+    fields.push_back(Type::getInt32Ty(context));    // object size
+    fields.push_back(Type::getInt8PtrTy(context));  // dispatch pointer
+    // fields.push_back(llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0));
+    // Todo: 函数绑定到dispatch table似乎在这里不能直接绑定，需要在初始化类的时候初始化指针(或者定义原型类)？
+    // Todo: abort、typename函数以及函数绑定到dispatch table的生成、成员的初始化定义
+    StructType *objectTy = StructType::create(context, fields, "Object");
+    return objectTy;
+}
+
+Function* create_io_out_string(StructType* ioTy) {
+    PointerType* ioPtrTy  = PointerType::get(ioTy, 0);
+    PointerType* strPtrTy = PointerType::get(Type::getInt8Ty(context), 0);
+
+    FunctionType* outTy = FunctionType::get(Type::getVoidTy(context), {ioPtrTy, strPtrTy}, false);
+    Function* outFunc = Function::Create(outTy, Function::ExternalLinkage, "IO.out_string", &module);
+
+    BasicBlock* entry = BasicBlock::Create(context, "entry", outFunc);
+    IRBuilder<> builder(entry);
+
+    Value* io  = &*outFunc->arg_begin();
+    Value* str = &*std::next(outFunc->arg_begin());
+
+    builder.CreateCall(RuntimeFuncs::putsFunc, str);
+    builder.CreateRetVoid();
+    return outFunc;
+}
+
+Function* create_io_in_string(StructType* ioTy) {
+    PointerType* ioPtrTy  = PointerType::get(ioTy, 0);
+    PointerType* strPtrTy = PointerType::get(Type::getInt8Ty(context), 0);
+
+    FunctionType* inTy = FunctionType::get(strPtrTy, {ioPtrTy}, false);
+    Function* inFunc = Function::Create(inTy, Function::ExternalLinkage, "IO.in_string", &module);
+
+    BasicBlock* entry = BasicBlock::Create(context, "entry", inFunc);
+    IRBuilder<> builder(entry);
+
+    Value* io = &*inFunc->args().begin();
+
+    Value* buf = builder.CreateCall(RuntimeFuncs::mallocFunc, ConstantInt::get(Type::getInt64Ty(context), 256));
+    Value* str = builder.CreateCall(RuntimeFuncs::getsFunc, buf);
+
+    builder.CreateRet(str);
+    return inFunc;
+}
+
+StructType* emit_io_type() {
+    std::vector<Type*> fields;
+    fields.push_back(Type::getInt32Ty(context));                     // class tag
+    fields.push_back(Type::getInt32Ty(context));                     // object size
+    fields.push_back(PointerType::get(Type::getInt8Ty(context), 0)); // dispatch pointer
+    // Todo: out_int、in_int函数生成，dispatch table的生成、成员的初始化定义
+    StructType* ioTy = StructType::create(context, fields, "IO");
+    return ioTy;
+}
+
+// Todo: String(成员变量是变长的)、Bool和Int类型的生成
+
+
+// 返回值可以设置为void？
+void emit_base_classes()
+{
+    emit_object_type();
+    emit_io_type();
+}
+
+llvm::Value* emit_program(Program program) 
+{   // Todo： 这里放到一个main行数更加合理一些，用于完成初始化，调用Main.main等外围代码生成
+    RuntimeFuncs::declare();
+    emit_base_classes();
     return emit_program_class((program_class*)program);
 }
