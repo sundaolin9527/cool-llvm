@@ -19,20 +19,20 @@ AR = gar
 ARCHIVE_NEW = -cr
 RANLIB = gar -qs
 
-SRC = cgen.cc cgen.h cgen_supp.cc cool-tree.h cool-tree.handcode.h emit.h example.cl README
-CSRC = cgen-phase.cc utilities.cc stringtab.cc dumptype.cc tree.cc cool-tree.cc ast-lex.cc ast-parse.cc handle_flags.cc 
+SRC = cgen.cpp cgen.h cgen_supp.cpp cool-tree.h cool-tree.handcode.h emit.h example.cl README
+CSRC = cgen-phase.cpp utilities.cpp stringtab.cpp dumptype.cpp tree.cpp cool-tree.cpp ast-lex.cpp ast-parse.cpp handle_flags.cpp 
 TSRC = mycoolc
 CGEN =
 HGEN = 
 LIBS = lexer parser semant
-CFIL = cgen.cc cgen_supp.cc cgen-llvm.cc ${CSRC} ${CGEN}
+CFIL = cgen.cpp cgen_supp.cpp cgen-llvm.cpp ${CSRC} ${CGEN}
 LSRC = Makefile
-OBJS = ${CFIL:.cc=.o}
+OBJS = ${CFIL:.cpp=.o}
 OUTPUT = good.output bad.output
 
 CPPINCLUDE = -I. -I${CLASSDIR}/include/ -I${CLASSDIR}/src/
 
-FFLAGS = -d8 -ocool-lex.cc
+FFLAGS = -d8 -ocool-lex.cpp
 BFLAGS = -d -v -y -b cool --debug -p cool_yy
 
 CC = g++
@@ -56,8 +56,8 @@ cgen: ${OBJS} parser semant
 cgen-llvm: ${OBJS} parser semant cgen-llvm.o
 	${CC} ${CFLAGS} ${OBJS} cgen-llvm.o ${LIB} -o cgen-llvm
 
-cgen-llvm.o: cgen-llvm.cc
-	${CC} ${CFLAGS} -c cgen-llvm.cc -o cgen-llvm.o
+cgen-llvm.o: cgen-llvm.cpp
+	${CC} ${CFLAGS} -c cgen-llvm.cpp -o cgen-llvm.o
 
 source: ${SRC} ${TSRC} ${LIBS} lsource
 
@@ -85,7 +85,7 @@ ${TSRC} ${CSRC}:
 ${HSRC}:
 	-ln -s ${CLASSDIR}/include/$@ $@
 
-.cc.o:
+.cpp.o:
 	${CC} ${CFLAGS} -c $<
 
 clean:
@@ -94,7 +94,7 @@ clean:
 clean-compile:
 	@-rm -f core ${OBJS} ${LSRC}
 
-%.d: %.cc ${SRC}
+%.d: %.cpp ${SRC}
 	${SHELL} -ec '${DEPEND} $< | sed '\''s/\($*\.o\)[ :]*/\1 $@ : /g'\'' > $@'
 
--include ${CFIL:.cc=.d}
+-include ${CFIL:.cpp=.d}

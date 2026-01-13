@@ -1,6 +1,6 @@
-#line 2 "ast-lex.cc"
+#line 2 "ast-lex.cpp"
 
-#line 4 "ast-lex.cc"
+#line 4 "ast-lex.cpp"
 
 #define  YY_INT_ALIGNED short int
 
@@ -710,10 +710,10 @@ extern int verbose_flag;
 
 extern YYSTYPE ast_yylval;
 
-YYSTYPE cool_yylval;  /* needed to link ast code with utilities.cc */
+YYSTYPE cool_yylval;  /* needed to link ast code with utilities.cpp */
 
 
-#line 717 "ast-lex.cc"
+#line 717 "ast-lex.cpp"
 
 #define INITIAL 0
 #define STRING 1
@@ -929,7 +929,7 @@ YY_DECL
 #line 75 "ast.flex"
 
 
-#line 933 "ast-lex.cc"
+#line 933 "ast-lex.cpp"
 
 	if ( !(yy_init) )
 		{
@@ -1304,7 +1304,7 @@ YY_RULE_SETUP
 #line 159 "ast.flex"
 ECHO;
 	YY_BREAK
-#line 1308 "ast-lex.cc"
+#line 1308 "ast-lex.cpp"
 
 	case YY_END_OF_BUFFER:
 		{

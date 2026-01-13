@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////
 //
-// file: cool-tree.cc
+// file: cool-tree.cpp
 //
 // This file defines the functions of each class
 //

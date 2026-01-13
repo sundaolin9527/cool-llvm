@@ -1,6 +1,4 @@
-cgen-llvm.o cgen-llvm.d : cgen-llvm.cc cgen.h emit.h \
- ../include/stringtab.h ../include/copyright.h \
- ../include/list.h ../include/cool-io.h \
- cool-tree.h ../include/tree.h \
- ../include/stringtab.h cool-tree.handcode.h \
- ../include/cool.h ../include/symtab.h
+cgen-llvm.o cgen-llvm.d : cgen-llvm.cpp cgen.h emit.h ..//include/stringtab.h \
+ ..//include/copyright.h ..//include/list.h ..//include/cool-io.h \
+ cool-tree.h ..//include/tree.h ..//include/stringtab.h \
+ cool-tree.handcode.h ..//include/cool.h ..//include/symtab.h

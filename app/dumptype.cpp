@@ -9,7 +9,7 @@
 #include "cool-tree.h"
 #include "utilities.h"
 
-// defined in stringtab.cc
+// defined in stringtab.cpp
 void dump_Symbol(ostream& stream, int padding, Symbol b); 
 
 // defined in cool.h
@@ -17,7 +17,7 @@ void dump_Boolean(ostream& stream, int padding, Boolean b);
 
 //////////////////////////////////////////////////////////////////
 //
-//  dumptype.cc
+//  dumptype.cpp
 //
 //  dumptype defines a simple recursive traversal of the abstract
 //  syntax tree (AST) that prints each node and any associated

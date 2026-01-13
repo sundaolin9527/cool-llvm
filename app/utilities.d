@@ -1,4 +1,4 @@
-utilities.o utilities.d : utilities.cc ../include/copyright.h \
+utilities.o utilities.d : utilities.cpp ../include/copyright.h \
  ../include/cool-io.h ../include/copyright.h \
  ../include/cool-parse.h ../include/cool-io.h \
  ../include/tree.h ../include/stringtab.h \
