@@ -1,3 +1,5 @@
+#ifndef CGEN_H
+#define CGEN_H
 #include <assert.h>
 #include <stdio.h>
 #include "emit.h"
@@ -92,3 +94,4 @@ class BoolConst
   void code_ref(ostream&) const;
 };
 
+#endif

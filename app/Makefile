@@ -12,6 +12,7 @@ LLVM_LIBS = $(shell $(LLVM_CONFIG) --libs all)
 LLVM_SYSTEM_LIBS = $(shell $(LLVM_CONFIG) --system-libs)
 
 # =========================================================
+DEBUG ?= 0
 ASSN = include
 CLASS = cs143
 CLASSDIR = ../
@@ -20,7 +21,7 @@ ARCHIVE_NEW = -cr
 RANLIB = gar -qs
 
 SRC = cgen.cpp cgen.h cgen_supp.cpp cool-tree.h cool-tree.handcode.h emit.h example.cl README
-CSRC = cgen-phase.cpp utilities.cpp stringtab.cpp dumptype.cpp tree.cpp cool-tree.cpp ast-lex.cpp ast-parse.cpp handle_flags.cpp 
+CSRC = cgen-phase.cpp utilities.cpp stringtab.cpp dumptype.cpp tree.cpp cool-tree.cpp ast-lex.cpp ast-parse.cpp handle_flags.cpp cgen-context.cpp cgen-llvm-ir.cpp symbol-table.cpp 
 TSRC = mycoolc
 CGEN =
 HGEN = 
@@ -37,7 +38,11 @@ BFLAGS = -d -v -y -b cool --debug -p cool_yy
 
 CC = g++
 CFLAGS = -g -Wall -Wno-unused -Wno-write-strings -Wno-deprecated \
-         ${CPPINCLUDE} ${LLVM_CXXFLAGS} -DDEBUG
+         ${CPPINCLUDE} ${LLVM_CXXFLAGS}
+
+ifeq ($(DEBUG),1)
+    CFLAGS += -DDEBUG
+endif
 
 LIB = -lfl ${LLVM_LDFLAGS} ${LLVM_LIBS} ${LLVM_SYSTEM_LIBS}
 
