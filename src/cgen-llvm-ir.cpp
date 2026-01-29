@@ -211,6 +211,7 @@ llvm::Value *CodeGenerator::emit_new__class(new__class *new_class)
     if (new_class == nullptr) return nullptr;
     
     std::string class_name_str = new_class->type_name->get_string();
+    _context.setNewClassName(class_name_str);
     llvm::IRBuilder<> &builder = getIRBuilder();
 
     std::string new_name = class_name_str + ".new";
@@ -261,6 +262,7 @@ llvm::Value *CodeGenerator::emit_class__class(class__class* _class)
     if (_class == nullptr) return nullptr;
     
     std::string className = _class->name->get_string();
+    std::cout << "className: " << className << std::endl;
     SymbolTableManager& symbol_table = getSymbolTable();
     
     // 检查是否已生成该类
@@ -804,14 +806,56 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
     #endif
     if (expression == nullptr) return nullptr; 
 
-    emit_expression(expression->expr);
-
-    Expressions actuals = expression->actual;
+    llvm::IRBuilder<> &builder = getIRBuilder();
+    // 1. 获取对象指针
+    llvm::Value *ptr = emit_expression(expression->expr);
+    
+    // 2. 准备参数
+    std::vector<llvm::Value*> args;
+    args.push_back(ptr); // 第一个参数是对象指针（this指针）
+    
+    Expressions actuals = expression->actual; 
     for (int i = actuals->first(); actuals->more(i); i = actuals->next(i)) {
-        emit_expression(actuals->nth(i));
+        llvm::Value *arg_value = emit_expression(actuals->nth(i));
+        args.push_back(arg_value);
     }
-    getModule().print(outs(), nullptr);
-    return nullptr;
+    
+    // 3. 获取函数名
+    std::string func_name = _context.getNewClassName() + "." + expression->name->get_string();
+    
+    // 4. 获取函数
+    llvm::Function *func = getModule().getFunction(func_name);
+    if (!func) {
+        // 构建参数类型列表
+        std::vector<llvm::Type*> param_types;
+        for (auto &arg : args) {
+            param_types.push_back(arg->getType());
+        }
+        
+        // 创建不透明指针作为占位符
+        llvm::Type *return_type = llvm::PointerType::get(
+            llvm::StructType::create(_context.getLLVMContext(), "placeholder"), 
+            0
+        );
+        
+        // 创建函数类型
+        llvm::FunctionType *func_type = llvm::FunctionType::get(
+            return_type, param_types, false);
+        
+        // 创建函数声明
+        func = llvm::Function::Create(
+            func_type,
+            llvm::Function::ExternalLinkage,
+            func_name,
+            &getModule()
+        );
+    }
+    
+    // 5. 生成调用指令
+    llvm::Value *result = builder.CreateCall(func, args);
+
+    // 6. 返回调用结果
+    return ptr;
 }
 
 llvm::Value *CodeGenerator::emit_cond_class(cond_class* expression)
@@ -1195,7 +1239,7 @@ llvm::Value* CodeGenerator::emit_object_class(object_class* expression) {
     std::cout << "emit_object_class" << std::endl;
     #endif
     if (expression == nullptr) return nullptr;
-
+    getModule().print(outs(), nullptr);
     VariableInfo* varInfo = findVariable(getSymbolTable().getCurrentClassName(), expression->name->get_string());
     if (!varInfo || !varInfo->value) {
         std::cout << "VariableInfo not found" << std::endl;
@@ -1321,5 +1365,6 @@ llvm::Value* CodeGenerator::emit_program(Program program)
     #ifdef DEBUG
     std::cout << "emit_program" << std::endl;
     #endif
+
     return emit_program_class((program_class*)program);
 }
