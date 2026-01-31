@@ -143,8 +143,8 @@ void CodeGenerator::default_initialize_object(llvm::Value* objPtr, ClassLayout& 
     builder.CreateStore(vtablePtr, dispatchAddr);
     
     // 如果有父类，需要初始化父类部分
-    if (!classLayout.parent.empty()) {
-        ClassLayout* parentLayout = getSymbolTable().findClass(classLayout.parent);
+    if (!classLayout.parentName.empty()) {
+        ClassLayout* parentLayout = getSymbolTable().findClass(classLayout.parentName);
         if (parentLayout) {
             // 获取父类部分在结构体中的偏移
             llvm::Value* parentPartAddr = builder.CreateStructGEP(classLayout.type, objPtr, 3);
@@ -314,7 +314,7 @@ ClassLayout CodeGenerator::collect_class_info(class__class* _class)
 {
     ClassLayout classLayout;
     classLayout.name = _class->name->get_string();
-    classLayout.parent = _class->parent->get_string();
+    classLayout.parentName = _class->parent->get_string();
     
     for (int i = _class->features->first(); _class->features->more(i); i = _class->features->next(i)) {
         Feature_class *feature = _class->features->nth(i);
@@ -335,8 +335,6 @@ ClassLayout CodeGenerator::collect_class_info(class__class* _class)
         else if (method_class *method = dynamic_cast<method_class*>(feature)) {
             // 收集当前类自己的方法
             std::string methodName = method->name->get_string();
-            classLayout.methodNamesInOrder.push_back(methodName);
-            
             ClassLayout::ClassMethodInfo methodInfo;
             methodInfo.name = methodName;
             methodInfo.method = method;
@@ -364,8 +362,8 @@ void CodeGenerator::build_memory_layout(ClassLayout& classLayout)
     
     // 处理父类
     llvm::StructType* parentType = nullptr;
-    if (!classLayout.parent.empty()) {
-        ClassLayout* parentLayout = symbol_table.findClass(classLayout.parent);
+    if (!classLayout.parentName.empty()) {
+        ClassLayout* parentLayout = symbol_table.findClass(classLayout.parentName);
         if (parentLayout && parentLayout->type) {
             parentType = parentLayout->type;
             structFields.push_back(parentType);
@@ -393,7 +391,7 @@ void CodeGenerator::build_memory_layout(ClassLayout& classLayout)
 void CodeGenerator::build_vtable(ClassLayout& classLayout)
 {
     SymbolTableManager& symbol_table = getSymbolTable();
-    std::string parentName = classLayout.parent;
+    std::string parentName = classLayout.parentName;
     ClassLayout* parentLayout = nullptr;
     
     if (!parentName.empty()) {
@@ -409,7 +407,6 @@ void CodeGenerator::build_vtable(ClassLayout& classLayout)
         for (const auto& method : parentLayout->methods) {
             allMethods[method.name] = method;
         }
-        allMethodNamesInOrder = parentLayout->methodNamesInOrder;
     }
     
     // 处理当前类的方法（可能重写父类方法）
@@ -427,7 +424,6 @@ void CodeGenerator::build_vtable(ClassLayout& classLayout)
     }
     
     // 更新classLayout中的方法信息
-    classLayout.methodNamesInOrder = allMethodNamesInOrder;
     classLayout.methods.clear();
     for (const auto& methodName : allMethodNamesInOrder) {
         classLayout.methods.push_back(allMethods[methodName]);
@@ -1239,7 +1235,7 @@ llvm::Value* CodeGenerator::emit_object_class(object_class* expression) {
     std::cout << "emit_object_class" << std::endl;
     #endif
     if (expression == nullptr) return nullptr;
-    getModule().print(outs(), nullptr);
+
     VariableInfo* varInfo = findVariable(getSymbolTable().getCurrentClassName(), expression->name->get_string());
     if (!varInfo || !varInfo->value) {
         std::cout << "VariableInfo not found" << std::endl;
@@ -1356,6 +1352,7 @@ llvm::Value *CodeGenerator::emit_program_class(program_class *program)
     {
         emit_class_(classes->nth(i));
     }
+    getModule().print(outs(), nullptr);
     // 返回值应该获取Main类中的main函数??
     return nullptr;
 }

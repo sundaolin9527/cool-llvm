@@ -179,7 +179,7 @@ std::vector<ClassLayout*> SymbolTableManager::getInheritanceChain(const std::str
         if (!cls) break;
         
         chain.push_back(cls);
-        current = cls->parent;
+        current = cls->parentName;
     }
     
     // 反转，使基类在前
@@ -300,7 +300,7 @@ void SymbolTableManager::dump() const {
     
     std::cout << "\n2. Classes (" << classRegistry.size() << "):\n";
     for (const auto& [name, cls] : classRegistry) {
-        std::cout << "  " << name << " (parent: " << cls.parent << ")\n";
+        std::cout << "  " << name << " (parent: " << cls.parentName << ")\n";
     }
     
     std::cout << "\n3. Current Scope Depth: " << scopeStack.size() << "\n";
