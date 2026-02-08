@@ -598,6 +598,7 @@ llvm::Value *CodeGenerator::emit_method_class(method_class* method)
     std::cout << "emit_method_class" << std::endl;
     #endif
     if (method == nullptr) return nullptr;
+    std::cout << method->name->get_string() << std::endl;
 
     std::string className = getSymbolTable().getCurrentClassName();
     llvm::Function* exist_func = getSymbolTable().findMethod(className, method->name->get_string());
@@ -806,7 +807,8 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
     
     // 3. 获取函数名
     std::string func_name = _context.getNewClassName() + "." + expression->name->get_string();
-    
+    std::cout << func_name << std::endl;
+
     // 4. 获取函数
     llvm::Function *func = getModule().getFunction(func_name);
     if (!func) {
@@ -1100,6 +1102,15 @@ llvm::Value *CodeGenerator::emit_typcase_class(typcase_class* expression)
     std::cout << "emit_typcase_class" << std::endl;
     #endif
     if (expression == nullptr) return nullptr;
+
+   llvm::Value* expr_value = emit_expression(expression->expr);
+//    Cases cases = expression->cases;
+//    for(int i = cases->first(); cases->more(i); i = cases->next(i))
+//    {
+//       llvm::Value* case_value = emit_expression(cases->nth(i));
+//    }
+   //如何实现
+   return nullptr;
 }
 
 llvm::Value *CodeGenerator::emit_block_class(block_class* expression)
@@ -1446,6 +1457,12 @@ llvm::Value* CodeGenerator::emit_expression(Expression e) {
     }
     else if (auto* expr = dynamic_cast<assign_class*>(e)) {
         return emit_assign_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<typcase_class*>(e)) {
+        return emit_typcase_class(expr);
+    }
+    else if (auto* expr = dynamic_cast<typcase_class*>(e)) {
+        return emit_typcase_class(expr);
     }
     else if (auto* expr = dynamic_cast<new__class*>(e)) {
         return emit_new__class(expr);
