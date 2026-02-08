@@ -309,6 +309,18 @@ const std::map<std::string, VariableInfo>& SymbolTableManager::getAllMemberVars(
     return inheritanceCache[className];
 }
 
+llvm::Value* SymbolTableManager::getStringValue(const std::string& stringName) {
+    auto it = string_pool.find(stringName);
+    if (it != string_pool.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+void SymbolTableManager::registerString(const std::string& stringName, llvm::Value* value) {
+    string_pool[stringName] = value;
+    return;
+}
 // 调试
 void SymbolTableManager::dump() const {
     std::cout << "=== Symbol Table Dump ===\n";

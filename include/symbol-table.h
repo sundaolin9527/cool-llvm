@@ -161,6 +161,9 @@ public:
     
     // 函数处理上下文栈
     std::stack<std::string> functionStack;
+    
+    // 字符串池
+    std::unordered_map<std::string, llvm::Value*> string_pool;
 public:
     // 构造函数
     SymbolTableManager() = default;
@@ -220,9 +223,12 @@ public:
                                 const std::string& varName);
     
     // 成员变量查找
-    const std::map<std::string, VariableInfo>& getAllMemberVars(
-        const std::string& className);
+    const std::map<std::string, VariableInfo>& getAllMemberVars(const std::string& className);
     
+    // 字符串池
+    llvm::Value* getStringValue(const std::string& stringName);
+    void registerString(const std::string& stringName, llvm::Value* value);
+
     // 调试
     void dump() const;
 };

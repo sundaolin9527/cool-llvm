@@ -1282,9 +1282,56 @@ llvm::Value* CodeGenerator::emit_bool_const_class(bool_const_class* expression)
 
 llvm::Value* CodeGenerator::emit_string_const_class(string_const_class* expression) {
     #ifdef DEBUG
-    std::cout << "emit_string_const_class" << std::endl;
+    std::cout << "emit_string_const_class" << expression->token->get_string() << std::endl;
     #endif
+    
     if (expression == nullptr) return nullptr;
+    
+    std::string str = expression->token->get_string();
+    
+    // 检查字符串池中是否已存在
+    llvm::Value* exist_str = getSymbolTable().getStringValue(str);
+    if (exist_str != nullptr) {
+        return exist_str;
+    }
+    // 创建字符串常量
+    llvm::Constant* str_const = llvm::ConstantDataArray::getString(
+        _context.getLLVMContext(),
+        str,
+        true
+    );
+    
+    // 生成基于哈希的全局变量名
+    std::hash<std::string> hasher;
+    std::string global_name = ".str." + std::to_string(hasher(str));
+    
+    // 创建全局变量
+    llvm::GlobalVariable* global_str = new llvm::GlobalVariable(
+        getModule(),
+        str_const->getType(),
+        true,
+        llvm::GlobalVariable::PrivateLinkage,
+        str_const,
+        global_name
+    );
+    
+    // 获取 i8* 指针
+    llvm::Type* i8_type = llvm::Type::getInt8Ty(_context.getLLVMContext());
+    llvm::Type* i32_type = llvm::Type::getInt32Ty(_context.getLLVMContext());
+    llvm::Value* zero = llvm::ConstantInt::get(i32_type, 0);
+    llvm::Value* indices[] = { zero, zero };
+    
+    llvm::Value* str_ptr = getIRBuilder().CreateInBoundsGEP(
+        global_str->getValueType(),
+        global_str,
+        indices,
+        "str_ptr"
+    );
+    
+    // 缓存到池中
+    getSymbolTable().registerString(str, str_ptr);
+    
+    return str_ptr;
 }
 
 llvm::Value* CodeGenerator::emit_isvoid_class(isvoid_class* expression) {
