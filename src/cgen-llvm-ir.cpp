@@ -782,6 +782,7 @@ llvm::Value *CodeGenerator::emit_static_dispatch_class(static_dispatch_class* ex
     if (expression == nullptr) return nullptr;
 }
 
+// 函数调用
 llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
 {
     #ifdef DEBUG
@@ -833,12 +834,12 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
             &getModule()
         );
     }
-    
+
     // 5. 生成调用指令
     llvm::Value *result = builder.CreateCall(func, args);
 
     // 6. 返回调用结果
-    return ptr;
+    return result;
 }
 
 llvm::Value *CodeGenerator::emit_cond_class(cond_class* expression)
