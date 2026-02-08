@@ -324,12 +324,6 @@ ClassLayout CodeGenerator::collect_class_info(class__class* _class)
             std::string attrName = attr->name->get_string();
             std::string typeName = attr->type_decl->get_string();
             llvm::Type* type = mapCoolTypeToLLVM(typeName);
-            
-            if (typeName != "Int" && typeName != "Bool" && typeName != "String") {
-                if (!type->isPointerTy()) {
-                    type = type->getPointerTo();
-                }
-            }
             classLayout.ownAttributes.emplace(attrName, VariableInfo::createMember(type, nullptr, classLayout.name));
         }
         else if (method_class *method = dynamic_cast<method_class*>(feature)) {
@@ -605,21 +599,20 @@ llvm::Value *CodeGenerator::emit_method_class(method_class* method)
     #endif
     if (method == nullptr) return nullptr;
 
+    std::string className = getSymbolTable().getCurrentClassName();
+    llvm::Function* exist_func = getSymbolTable().findMethod(className, method->name->get_string());
+    if (exist_func != nullptr) {
+        return exist_func;
+    }
+
     getSymbolTable().enterScope();
     // 确定返回类型
     std::string returnTypeName = method->return_type->get_string();
     llvm::Type* returnType = nullptr;
     
-    std::string className = getSymbolTable().getCurrentClassName();
-    
     ClassLayout* classLayout = getSymbolTable().findClass(className);
+
     returnType = mapCoolTypeToLLVM(returnTypeName);
-    // (todo*) 是否需要加判断
-    if (returnTypeName != "Int" && returnTypeName != "Bool" && returnTypeName != "String") {
-        if (!returnType->isPointerTy()) {
-            returnType = returnType->getPointerTo();
-        }
-    }
 
     // 构建参数列表
     FormalParams params = emit_formals(method->formals, classLayout->type);
@@ -747,12 +740,6 @@ FormalParams CodeGenerator::emit_formals(Formals formals, llvm::Type* classType)
         llvm::Type* paramType = mapCoolTypeToLLVM(paramTypeName);
         
         assert(paramType != nullptr && "mapCoolTypeToLLVM returned null");
-        
-        if (paramTypeName != "Int" && paramTypeName != "Bool" && paramTypeName != "String") {
-            if (!paramType->isPointerTy()) {
-                paramType = paramType->getPointerTo();
-            }
-        }
 
         paramNames.push_back(paramName);
         paramTypes.push_back(paramType);
@@ -864,7 +851,7 @@ llvm::Value *CodeGenerator::emit_cond_class(cond_class* expression)
     llvm::Function* current_function = getIRBuilder().GetInsertBlock()->getParent();
     llvm::Value* pred_value = emit_expression(expression->pred);
 
-     // 确保条件值是布尔类型
+    // 确保条件值是布尔类型
     if (!pred_value->getType()->isIntegerTy(1)) {
         if (pred_value->getType()->isIntegerTy()) {
             // 整数类型：比较是否不等于0
@@ -931,44 +918,139 @@ llvm::Value *CodeGenerator::emit_cond_class(cond_class* expression)
     
     // 7. 处理返回值（创建 phi 节点）
     if (!then_terminated && !else_terminated) {
-        // 确保两个分支的返回类型一致
+        // 确保两个分支都有返回值
         if (then_value == nullptr || else_value == nullptr) {
-            // 某个分支没有返回值（可能是 void 类型）
-            return nullptr;
-        }
-        
-        // 检查类型是否匹配
-        if (then_value->getType() != else_value->getType()) {
-            // 尝试进行类型转换
-            // 先检查是否可以转换为共同的类型
-            
-            // 如果一个是整数，另一个也是整数
-            if (then_value->getType()->isIntegerTy() && else_value->getType()->isIntegerTy()) {
-                // 找到较大的整数类型
-                unsigned then_bits = then_value->getType()->getIntegerBitWidth();
-                unsigned else_bits = else_value->getType()->getIntegerBitWidth();
-                
-                if (then_bits < else_bits) {
-                    // 扩展 then_value
-                    then_value = getIRBuilder().CreateSExt(then_value, else_value->getType(), "sext_then");
-                } else if (then_bits > else_bits) {
-                    // 扩展 else_value
-                    else_value = getIRBuilder().CreateSExt(else_value, then_value->getType(), "sext_else");
-                }
+            // 如果其中一个分支没有返回值，检查是否是 void 类型
+            if (then_value == nullptr && else_value == nullptr) {
+                // 两个分支都是 void，返回 nullptr
+                return nullptr;
+            } else {
+                // 一个分支有返回值，另一个没有，这是类型错误
+                llvm::errs() << "Error: Mismatched return types in conditional expression\n";
+                return nullptr;
             }
         }
         
-        // 创建 phi 节点合并两个分支的值
-        llvm::PHINode* phi_node = getIRBuilder().CreatePHI(
-            then_value->getType(), 
-            2, 
-            "cond_result"
-        );
+        // 获取类型
+        llvm::Type* then_type = then_value->getType();
+        llvm::Type* else_type = else_value->getType();
         
+        // 如果类型已经相同，直接创建 PHI 节点
+        if (then_type == else_type) {
+            llvm::PHINode* phi_node = getIRBuilder().CreatePHI(then_type, 2, "cond_result");
+            phi_node->addIncoming(then_value, then_end_block);
+            phi_node->addIncoming(else_value, else_end_block);
+            return phi_node;
+        }
+        
+        // 类型不同，需要进行类型转换
+        llvm::Value* phi_value = nullptr;
+        
+        // 情况1：整数类型转换
+        if (then_type->isIntegerTy() && else_type->isIntegerTy()) {
+            unsigned then_bits = then_type->getIntegerBitWidth();
+            unsigned else_bits = else_type->getIntegerBitWidth();
+            
+            // 选择较大的类型
+            if (then_bits >= else_bits) {
+                // 扩展 else_value
+                else_value = getIRBuilder().CreateIntCast(else_value, then_type, true, "intcast_else");
+                phi_value = then_value;
+                llvm::Type* phi_type = then_type;
+            } else {
+                // 扩展 then_value
+                then_value = getIRBuilder().CreateIntCast(then_value, else_type, true, "intcast_then");
+                phi_value = else_value;
+                llvm::Type* phi_type = else_type;
+            }
+        }
+        // 情况2：浮点类型转换
+        else if (then_type->isFloatingPointTy() && else_type->isFloatingPointTy()) {
+            // 选择精度更高的类型
+            if (then_type->isDoubleTy() || else_type->isDoubleTy()) {
+                // 转换为 double
+                llvm::Type* double_type = llvm::Type::getDoubleTy(_context.getLLVMContext());
+                if (!then_type->isDoubleTy()) {
+                    then_value = getIRBuilder().CreateFPCast(then_value, double_type, "fpcast_then");
+                }
+                if (!else_type->isDoubleTy()) {
+                    else_value = getIRBuilder().CreateFPCast(else_value, double_type, "fpcast_else");
+                }
+                phi_value = then_value;
+                llvm::Type* phi_type = double_type;
+            } else {
+                // 都是 float，保持原样
+                phi_value = then_value;
+                llvm::Type* phi_type = then_type;
+            }
+        }
+        // 情况3：整数转浮点
+        else if (then_type->isIntegerTy() && else_type->isFloatingPointTy()) {
+            // 整数转换为浮点
+            then_value = getIRBuilder().CreateSIToFP(then_value, else_type, "sitofp_then");
+            phi_value = else_value;
+            llvm::Type* phi_type = else_type;
+        }
+        // 情况4：浮点转整数
+        else if (then_type->isFloatingPointTy() && else_type->isIntegerTy()) {
+            // 整数转换为浮点
+            else_value = getIRBuilder().CreateSIToFP(else_value, then_type, "sitofp_else");
+            phi_value = then_value;
+            llvm::Type* phi_type = then_type;
+        }
+        // 情况5：指针类型
+        else if (then_type->isPointerTy() && else_type->isPointerTy()) {
+            // 检查指针类型是否兼容
+            // 简化处理：转换为 void* 指针
+            llvm::Type* void_ptr_type = llvm::PointerType::get(llvm::Type::getInt8Ty(_context.getLLVMContext()), 0);
+            then_value = getIRBuilder().CreatePointerCast(then_value, void_ptr_type, "ptrcast_then");
+            else_value = getIRBuilder().CreatePointerCast(else_value, void_ptr_type, "ptrcast_else");
+            phi_value = then_value;
+            llvm::Type* phi_type = void_ptr_type;
+        }
+        // 其他情况：尝试通用转换
+        else {
+            // 尝试将两者都转换为 i64
+            llvm::Type* i64_type = llvm::Type::getInt64Ty(_context.getLLVMContext());
+            
+            if (then_type->isIntegerTy()) {
+                then_value = getIRBuilder().CreateIntCast(then_value, i64_type, true, "generic_intcast_then");
+            } else if (then_type->isFloatingPointTy()) {
+                then_value = getIRBuilder().CreateFPToSI(then_value, i64_type, "generic_fptosi_then");
+            } else if (then_type->isPointerTy()) {
+                then_value = getIRBuilder().CreatePtrToInt(then_value, i64_type, "generic_ptrtoint_then");
+            }
+            
+            if (else_type->isIntegerTy()) {
+                else_value = getIRBuilder().CreateIntCast(else_value, i64_type, true, "generic_intcast_else");
+            } else if (else_type->isFloatingPointTy()) {
+                else_value = getIRBuilder().CreateFPToSI(else_value, i64_type, "generic_fptosi_else");
+            } else if (else_type->isPointerTy()) {
+                else_value = getIRBuilder().CreatePtrToInt(else_value, i64_type, "generic_ptrtoint_else");
+            }
+            
+            phi_value = then_value;
+            llvm::Type* phi_type = i64_type;
+        }
+        
+        // 再次检查类型是否一致
+        if (then_value->getType() != else_value->getType()) {
+            llvm::errs() << "Error: Failed to unify types in conditional expression\n";
+            llvm::errs() << "  then type: ";
+            then_value->getType()->print(llvm::errs());
+            llvm::errs() << "\n  else type: ";
+            else_value->getType()->print(llvm::errs());
+            llvm::errs() << "\n";
+            return nullptr;
+        }
+        
+        // 创建 PHI 节点
+        llvm::PHINode* phi_node = getIRBuilder().CreatePHI(then_value->getType(), 2, "cond_result");
         phi_node->addIncoming(then_value, then_end_block);
         phi_node->addIncoming(else_value, else_end_block);
         
         return phi_node;
+        
     } else if (then_terminated && !else_terminated) {
         // then 分支已经终止，不需要 phi 节点
         return else_value;
@@ -1230,6 +1312,7 @@ VariableInfo* CodeGenerator::findVariable(const std::string& className, const st
     return _symbolTable.findVariable(className, varName);
 }
 
+// 标识符处理
 llvm::Value* CodeGenerator::emit_object_class(object_class* expression) {
     #ifdef DEBUG
     std::cout << "emit_object_class" << std::endl;

@@ -191,6 +191,7 @@ public:
     void enterMethod(const std::string& methodName);
     void exitMethod();
     std::string getCurrentMethodName() const;
+    llvm::Function* findMethod(const std::string& className, const std::string& methodName);
 
     // 变量添加
     bool addLocalVar(const std::string& name, llvm::Type* type, 

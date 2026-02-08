@@ -68,6 +68,26 @@ void SymbolTableManager::exitClass() {
     }
 }
 
+// 查找指定方法
+llvm::Function* SymbolTableManager::findMethod(const std::string& className, const std::string& methodName) {
+    ClassLayout* classLayout = findClass(className);
+    if (classLayout == nullptr) {
+        return nullptr;
+    }
+    
+    for (const auto& method_info : classLayout->methods) {
+        if (method_info.name == methodName) {
+            return method_info.func;
+        }
+    }
+    
+    if (!classLayout->parentName.empty()) {
+        return findMethod(classLayout->parentName, methodName);
+    }
+    
+    return nullptr;
+}
+
 std::string SymbolTableManager::getCurrentClassName() const {
     if (!classStack.empty()) {
         return classStack.top();
