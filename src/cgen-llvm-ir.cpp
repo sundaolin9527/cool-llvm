@@ -1261,7 +1261,7 @@ llvm::Value* CodeGenerator::emit_eq_class(eq_class* expression) {
         std::cerr << ")" << std::endl;
     }
     #endif
-    
+
     return getIRBuilder().CreateICmpEQ(left_val, right_val, "eqtmp");
 }
 
