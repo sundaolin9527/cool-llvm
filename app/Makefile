@@ -21,7 +21,7 @@ ARCHIVE_NEW = -cr
 RANLIB = gar -qs
 
 SRC = cgen.cpp cgen.h cgen_supp.cpp cool-tree.h cool-tree.handcode.h emit.h example.cl README
-CSRC = cgen-phase.cpp utilities.cpp stringtab.cpp dumptype.cpp tree.cpp cool-tree.cpp ast-lex.cpp ast-parse.cpp handle_flags.cpp cgen-context.cpp cgen-llvm-ir.cpp symbol-table.cpp 
+CSRC = cgen-phase.cpp utilities.cpp stringtab.cpp dumptype.cpp tree.cpp cool-tree.cpp ast-lex.cpp ast-parse.cpp handle_flags.cpp cgen-context.cpp cgen-llvm-ir.cpp symbol-table.cpp runtime.cpp 
 TSRC = mycoolc
 CGEN =
 HGEN = 

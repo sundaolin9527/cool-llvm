@@ -24,7 +24,7 @@ enum class StorageClass {
     STATIC_MEMBER, // 静态成员变量（类相关）
     LOCAL,         // 局部变量
     PARAM,         // 形参
-    GLOBAL,        // 全局变量
+    _GLOBAL,       // 全局变量
     STATIC_LOCAL   // 局部静态变量
 };
 
@@ -56,7 +56,7 @@ struct VariableInfo {
         return create(t, StorageClass::PARAM, paramValue, className);
     }
     static VariableInfo createGlobal(llvm::Type* t, llvm::Value* globalVar = nullptr, std::string className="") {
-        return create(t, StorageClass::GLOBAL, globalVar, className);
+        return create(t, StorageClass::_GLOBAL, globalVar, className);
     }
     void updateValue(llvm::Value* newValue) {
         value = newValue;
@@ -68,7 +68,7 @@ struct VariableInfo {
             case StorageClass::STATIC_MEMBER: return "STATIC_MEMBER";
             case StorageClass::LOCAL:         return "LOCAL";
             case StorageClass::PARAM:         return "PARAM";
-            case StorageClass::GLOBAL:        return "GLOBAL";
+            case StorageClass::_GLOBAL:       return "GLOBAL";
             case StorageClass::STATIC_LOCAL:  return "STATIC_LOCAL";
             default:                          return "UNKNOWN";
         }

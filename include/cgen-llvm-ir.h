@@ -1,8 +1,6 @@
 #ifndef CODEGEN_H
 #define CODEGEN_H
 
-#include "cgen-context.h"
-#include "symbol-table.h"
 #include <vector>
 #include <string>
 #include <llvm/IR/LLVMContext.h>
@@ -12,6 +10,9 @@
 #include <llvm/Support/raw_ostream.h>
 #include <map>
 #include "cgen.h"
+#include "runtime.h"
+#include "cgen-context.h"
+#include "symbol-table.h"
 
 // LLVM 命名空间
 using namespace llvm;
