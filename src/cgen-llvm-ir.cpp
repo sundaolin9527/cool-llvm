@@ -1243,6 +1243,24 @@ llvm::Value* CodeGenerator::emit_eq_class(eq_class* expression) {
 
     llvm::Value* left_val = emit_expression(expression->e1);
     llvm::Value* right_val = emit_expression(expression->e2);
+
+    #ifdef DEBUG
+    std::cerr << "[DEBUG] Equality comparison types:" << std::endl;
+    if (left_val) {
+        std::cerr << "  Left:  ";
+        left_val->getType()->print(llvm::errs());
+        std::cerr << " (value: ";
+        left_val->print(llvm::errs());
+        std::cerr << ")" << std::endl;
+    }
+    if (right_val) {
+        std::cerr << "  Right: ";
+        right_val->getType()->print(llvm::errs());
+        std::cerr << " (value: ";
+        right_val->print(llvm::errs());
+        std::cerr << ")" << std::endl;
+    }
+    #endif
     
     return getIRBuilder().CreateICmpEQ(left_val, right_val, "eqtmp");
 }
