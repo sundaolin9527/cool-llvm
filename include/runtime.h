@@ -8,7 +8,7 @@
 #include <string>
 #include <map>
 
-class CoolRuntime {
+class RuntimeAPI {
 private:
     llvm::LLVMContext& context;
     llvm::Module& _module;
@@ -93,7 +93,7 @@ private:
     std::map<std::string, llvm::GlobalVariable*> stringConstants;
     
 public:
-    CoolRuntime(llvm::LLVMContext& ctx, llvm::Module& mod);
+    RuntimeAPI(llvm::LLVMContext& ctx, llvm::Module& mod);
     
     // 声明所有函数
     void declareAllFunctions();

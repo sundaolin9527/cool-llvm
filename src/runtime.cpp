@@ -5,16 +5,16 @@
 
 using namespace llvm;
 
-CoolRuntime::CoolRuntime(LLVMContext& ctx, Module& mod)
+RuntimeAPI::RuntimeAPI(LLVMContext& ctx, Module& mod)
     : context(ctx), _module(mod) {
 }
 
-void CoolRuntime::declareAllFunctions() {
+void RuntimeAPI::declareAllFunctions() {
     declareStandardLibraryFunctions();
     declareCoolBuiltinFunctions();
 }
 
-void CoolRuntime::declareStandardLibraryFunctions() {
+void RuntimeAPI::declareStandardLibraryFunctions() {
     PointerType* i8PtrTy = Type::getInt8PtrTy(context);
     Type* i32Ty = Type::getInt32Ty(context);
     Type* i64Ty = Type::getInt64Ty(context);
@@ -81,7 +81,7 @@ void CoolRuntime::declareStandardLibraryFunctions() {
     externFuncs.abort = Function::Create(abortTy, Function::ExternalLinkage, "abort", &_module);
 }
 
-void CoolRuntime::declareCoolBuiltinFunctions() {
+void RuntimeAPI::declareCoolBuiltinFunctions() {
     // 首先获取或创建 COOL 类型
     StructType* objectTy = StructType::getTypeByName(context, "Object");
     if (!objectTy) {
@@ -226,28 +226,28 @@ void CoolRuntime::declareCoolBuiltinFunctions() {
 }
 
 // 辅助函数
-Value* CoolRuntime::createMallocCall(IRBuilder<>& builder, Value* size) {
+Value* RuntimeAPI::createMallocCall(IRBuilder<>& builder, Value* size) {
     return builder.CreateCall(externFuncs.malloc, {size}, "malloc_result");
 }
 
-Value* CoolRuntime::createMemcpyCall(IRBuilder<>& builder, 
+Value* RuntimeAPI::createMemcpyCall(IRBuilder<>& builder, 
                                     Value* dest, Value* src, 
                                     Value* size) {
     return builder.CreateCall(externFuncs.memcpy, {dest, src, size}, "memcpy_result");
 }
 
-Type* CoolRuntime::getCoolIntType() {
+Type* RuntimeAPI::getCoolIntType() {
     return StructType::getTypeByName(context, "Int");
 }
 
-Type* CoolRuntime::getCoolBoolType() {
+Type* RuntimeAPI::getCoolBoolType() {
     return StructType::getTypeByName(context, "Bool");
 }
 
-Type* CoolRuntime::getCoolStringType() {
+Type* RuntimeAPI::getCoolStringType() {
     return StructType::getTypeByName(context, "String");
 }
 
-Type* CoolRuntime::getCoolObjectType() {
+Type* RuntimeAPI::getCoolObjectType() {
     return StructType::getTypeByName(context, "Object");
 }
