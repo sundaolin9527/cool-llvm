@@ -166,47 +166,74 @@ void CodeGenerator::default_initialize_object(llvm::Value* objPtr, ClassLayout& 
  */
 llvm::Function* CodeGenerator::create_new_function(const std::string& className, ClassLayout& classLayout)
 {
-    //=== 生成new函数 ==========================================
-    llvm::FunctionType* newFuncType = llvm::FunctionType::get(
-        classLayout.type->getPointerTo(),
-        {},
-        false
-    );
+    std::string new_name = className + ".new";
     
-    llvm::Function* newFunc = llvm::Function::Create(
-        newFuncType,
-        llvm::Function::ExternalLinkage,
-        className + ".new",
-        getModule()
-    );
+    // 1. 查找已有的声明
+    llvm::Function* new_func = getModule().getFunction(new_name);
     
-    llvm::BasicBlock* newEntryBB = llvm::BasicBlock::Create(_context.getLLVMContext(), "entry", newFunc);
-    llvm::IRBuilder<>& builder = getIRBuilder();
-    builder.SetInsertPoint(newEntryBB);
-    
-    // 分配内存
-    llvm::Value* sizeVal = llvm::ConstantInt::get(llvm::Type::getInt64Ty(_context.getLLVMContext()), classLayout.objectSize);
-    
-    // 获取或插入malloc函数
-    llvm::FunctionCallee mallocFunc = getModule().getOrInsertFunction(
-        "malloc",
-        llvm::FunctionType::get(llvm::Type::getInt8PtrTy(_context.getLLVMContext()), 
-                               {llvm::Type::getInt64Ty(_context.getLLVMContext())}, false)
-    );
-    
-    llvm::Value* mem = builder.CreateCall(mallocFunc, {sizeVal});
-    llvm::Value* obj = builder.CreateBitCast(mem, classLayout.type->getPointerTo());
-    
-    // 调用构造函数
-    if (classLayout.constructor) {
-        builder.CreateCall(classLayout.constructor, {obj});
-    } else {
-        // 如果没有显式构造函数，进行默认初始化
-        default_initialize_object(obj, classLayout);
+    if (!new_func) {
+        // 如果没有声明，创建新的函数
+        llvm::FunctionType* func_type = llvm::FunctionType::get(
+            classLayout.type->getPointerTo(),
+            false
+        );
+        
+        new_func = llvm::Function::Create(
+            func_type,
+            llvm::Function::ExternalLinkage,
+            new_name,
+            &getModule()
+        );
+    } else if (!new_func->empty()) {
+        // 已经有定义
+        return new_func;
     }
     
-    builder.CreateRet(obj);
-    return newFunc;
+    // 2. 在声明的基础上创建定义
+    llvm::BasicBlock* saved_block = getIRBuilder().GetInsertBlock();
+    
+    llvm::BasicBlock* entry_bb = llvm::BasicBlock::Create(
+        _context.getLLVMContext(), 
+        "entry", 
+        new_func
+    );
+    getIRBuilder().SetInsertPoint(entry_bb);
+    
+    // 分配内存
+    llvm::Value* size_val = llvm::ConstantInt::get(
+        llvm::Type::getInt64Ty(_context.getLLVMContext()), 
+        classLayout.objectSize
+    );
+    
+    // 获取malloc函数
+    llvm::FunctionCallee malloc_func = getModule().getOrInsertFunction(
+        "malloc",
+        llvm::FunctionType::get(
+            llvm::Type::getInt8PtrTy(_context.getLLVMContext()), 
+            {llvm::Type::getInt64Ty(_context.getLLVMContext())}, 
+            false
+        )
+    );
+    
+    llvm::Value* mem = getIRBuilder().CreateCall(malloc_func, {size_val});
+    llvm::Value* obj = getIRBuilder().CreateBitCast(
+        mem, 
+        classLayout.type->getPointerTo()
+    );
+    
+    // 调用构造函数
+    std::string ctor_name = className + ".ctor";
+    llvm::Function* ctor_func = getModule().getFunction(ctor_name);
+    if (ctor_func) {
+        getIRBuilder().CreateCall(ctor_func, {obj});
+    }
+    
+    getIRBuilder().CreateRet(obj);
+    
+    // 恢复插入点
+    if (saved_block) {
+        getIRBuilder().SetInsertPoint(saved_block);
+    }
 }
 
 llvm::Value *CodeGenerator::emit_new__class(new__class *new_class)
@@ -1523,6 +1550,11 @@ llvm::Value *CodeGenerator::emit_program_class(program_class *program)
     for(int i = classes->first(); classes->more(i); i = classes->next(i))
     {
         emit_class_(classes->nth(i));
+        #ifdef DEBUG
+        if (i == 4) {
+            getModule().print(outs(), nullptr);
+        }
+        #endif
     }
     getModule().print(outs(), nullptr);
     // 返回值应该获取Main类中的main函数??
