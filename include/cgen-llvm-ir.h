@@ -27,6 +27,7 @@ private:
     SymbolTableManager _symbolTable;
     std::unique_ptr<IRBuilder<>> _builder;
     std::unique_ptr<Module> _llvmModule;
+    std::unique_ptr<RuntimeAPI> runtimeAPI;
 
 public:
     // ==================== 构造函数 ====================
@@ -44,6 +45,7 @@ public:
     SymbolTableManager& getSymbolTable();
     IRBuilder<>& getIRBuilder();
     Module& getModule();
+    RuntimeAPI& getRuntimeAPI();
 
 private:
     llvm::Type* mapCoolTypeToLLVM(const std::string& typeName);

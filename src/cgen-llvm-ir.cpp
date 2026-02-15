@@ -61,6 +61,12 @@ llvm::Module& CodeGenerator::getModule() {
     return *_llvmModule.get();
 }
 
+RuntimeAPI& CodeGenerator::getRuntimeAPI() {
+    if (!runtimeAPI) {
+        runtimeAPI = std::make_unique<RuntimeAPI>(_context.getLLVMContext(), getModule());
+    }
+    return *runtimeAPI.get();
+}
 // ==================== 主生成函数 ====================
 void CodeGenerator::emit_llvm_ir(Program program) {
 

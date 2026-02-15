@@ -25,13 +25,13 @@ private:
         llvm::Function* scanf = nullptr;      // 格式化输入
         llvm::Function* exit = nullptr;       // 程序退出
         llvm::Function* puts = nullptr;       // 字符串输出
-        llvm::Function* gets = nullptr;       // 字符串输入（不安全，但COOL需要）
+        llvm::Function* gets = nullptr;       // 字符串输入
         llvm::Function* strlen = nullptr;     // 字符串长度
         llvm::Function* strcpy = nullptr;     // 字符串复制
-        llvm::Function* strncpy = nullptr;    // 字符串复制（带长度）
+        llvm::Function* strncpy = nullptr;    // 字符串复制
         llvm::Function* strcat = nullptr;     // 字符串连接
         llvm::Function* strcmp = nullptr;     // 字符串比较
-        llvm::Function* strncmp = nullptr;    // 字符串比较（带长度）
+        llvm::Function* strncmp = nullptr;    // 字符串比较
         llvm::Function* atoi = nullptr;       // 字符串转整数
         llvm::Function* itoa = nullptr;       // 整数转字符串
         llvm::Function* abort = nullptr;      // 异常终止
@@ -88,9 +88,6 @@ private:
         llvm::Function* gc_collect = nullptr;           // GC回收
         llvm::Function* gc_init = nullptr;              // GC初始化
     } coolFuncs;
-    
-    // 字符串常量表
-    std::map<std::string, llvm::GlobalVariable*> stringConstants;
     
 public:
     RuntimeAPI(llvm::LLVMContext& ctx, llvm::Module& mod);
@@ -163,21 +160,11 @@ public:
     llvm::Function* getObjectInit() { return coolFuncs.object_init; }
     llvm::Function* getObjectDestroy() { return coolFuncs.object_destroy; }
     
-    // 垃圾回收（可选）
+    // 垃圾回收
     llvm::Function* getGCAlloc() { return coolFuncs.gc_alloc; }
     llvm::Function* getGCCollect() { return coolFuncs.gc_collect; }
     llvm::Function* getGCInit() { return coolFuncs.gc_init; }
-    
-    // ========== 辅助函数 ==========
-    
-    // 获取或创建字符串常量
-    llvm::Value* getOrCreateStringConstant(const std::string& str);
-    
-    // 创建常用函数调用
-    llvm::Value* createMallocCall(llvm::IRBuilder<>& builder, llvm::Value* size);
-    llvm::Value* createMemcpyCall(llvm::IRBuilder<>& builder, llvm::Value* dest, llvm::Value* src, llvm::Value* size);
-    llvm::Value* createPrintfCall(llvm::IRBuilder<>& builder, const std::string& format, const std::vector<llvm::Value*>& args);
-    
+
     // 类型相关
     llvm::Type* getCoolIntType();      // 返回 COOL Int 的 LLVM 类型
     llvm::Type* getCoolBoolType();     // 返回 COOL Bool 的 LLVM 类型
@@ -190,17 +177,5 @@ private:
     
     // 声明 COOL 内置函数
     void declareCoolBuiltinFunctions();
-    
-    // 声明字符串操作函数
-    void declareStringFunctions();
-    
-    // 声明数学函数
-    void declareMathFunctions();
-    
-    // 声明内存管理函数
-    void declareMemoryFunctions();
-    
-    // 声明输入输出函数
-    void declareIOFunctions();
 };
 #endif // COOL_RUNTIME_H

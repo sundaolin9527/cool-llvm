@@ -225,17 +225,7 @@ void RuntimeAPI::declareCoolBuiltinFunctions() {
     coolFuncs.object_init = Function::Create(objectInitTy, Function::ExternalLinkage, "Object_init", &_module);
 }
 
-// 辅助函数
-Value* RuntimeAPI::createMallocCall(IRBuilder<>& builder, Value* size) {
-    return builder.CreateCall(externFuncs.malloc, {size}, "malloc_result");
-}
-
-Value* RuntimeAPI::createMemcpyCall(IRBuilder<>& builder, 
-                                    Value* dest, Value* src, 
-                                    Value* size) {
-    return builder.CreateCall(externFuncs.memcpy, {dest, src, size}, "memcpy_result");
-}
-
+// 类型
 Type* RuntimeAPI::getCoolIntType() {
     return StructType::getTypeByName(context, "Int");
 }
