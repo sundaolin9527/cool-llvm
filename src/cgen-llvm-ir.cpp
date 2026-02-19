@@ -816,7 +816,7 @@ llvm::Value *CodeGenerator::emit_static_dispatch_class(static_dispatch_class* ex
     if (expression == nullptr) return nullptr;
 }
 
-// 函数调用
+// 函数调用, 需要区分实例函数，静态函数，运行时的函数调用
 llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
 {
     #ifdef DEBUG
@@ -839,7 +839,8 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
     }
     
     // 3. 获取函数名
-    std::string func_name = _context.getNewClassName() + "." + expression->name->get_string();
+    // std::string func_name = _context.getNewClassName() + "." + expression->name->get_string();
+    std::string func_name = expression->name->get_string();
     std::cout << func_name << std::endl;
 
     // 4. 获取函数
@@ -1428,6 +1429,7 @@ llvm::Value* CodeGenerator::emit_object_class(object_class* expression) {
     std::cout << "emit_object_class" << std::endl;
     #endif
     if (expression == nullptr) return nullptr;
+    std::cout << expression->name->get_string() << std::endl;
 
     VariableInfo* varInfo = findVariable(getSymbolTable().getCurrentClassName(), expression->name->get_string());
     if (!varInfo || !varInfo->value) {
