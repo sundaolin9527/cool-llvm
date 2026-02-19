@@ -639,9 +639,6 @@ void CodeGenerator::initStringConstants() {
             indices
         );
         
-        // 创建 String 对象
-        // 注意：这里需要在堆上分配 String 对象并初始化
-        // 为了简化，我们可以先缓存字符串数据指针
         _symbolTable.registerString(str, strDataPtr);
         
         #ifdef DEBUG
