@@ -29,25 +29,17 @@ private:
     std::unique_ptr<Module> _llvmModule;
     std::unique_ptr<RuntimeAPI> runtimeAPI;
 
-public:
-    // ==================== 构造函数 ====================
-    CodeGenerator();
+    // ========== 方法映射表 ==========
+    using MethodMap = std::unordered_map<std::string, llvm::Function*>;
+    struct ClassMethodMaps {
+        MethodMap virtualMethods;    // 虚方法映射
+        MethodMap staticMethods;     // 静态方法映射
+        MethodMap overrideMethods;   // 重写方法映射
+    };
+    std::unordered_map<std::string, ClassMethodMaps> _methodMaps;
     
-    // ==================== 主生成函数 ====================
-    void emit_llvm_ir(Program program);
-    
-    // ==================== 工具函数 ====================
-    void dumpIR();
-    bool verifyModule();
-    
-    // ==================== 访问器 ====================
-    CompilerContext& getContext();
-    SymbolTableManager& getSymbolTable();
-    IRBuilder<>& getIRBuilder();
-    Module& getModule();
-    RuntimeAPI& getRuntimeAPI();
-
 private:
+    // ========== 类构建函数 ==========
     llvm::Type* mapCoolTypeToLLVM(const std::string& typeName);
     VariableInfo* findVariable(const std::string& className, const std::string& varName);
     ClassLayout collect_class_info(class__class* _class);
@@ -59,6 +51,31 @@ private:
     void default_initialize_object(llvm::Value* objPtr, ClassLayout& classLayout);
     llvm::Function* create_new_function(const std::string& className, ClassLayout& classLayout);
     
+    // ========== 运行时初始化 ==========
+    void runtime_init();
+    void initObjectClass();
+    void initIntClass();
+    void initBoolClass();
+    void initStringClass();
+    void initIOClass();
+    void initStringConstants();
+    
+    // ========== 方法注册系统 ==========
+    void buildMethodMaps();           // 构建所有方法映射表
+    void registerClassMethods(ClassLayout& layout);  // 为类注册方法
+    
+    // 各个类的方法映射构建函数
+    void buildObjectMethodMap(ClassMethodMaps& maps);
+    void buildIntMethodMap(ClassMethodMaps& maps);
+    void buildBoolMethodMap(ClassMethodMaps& maps);
+    void buildStringMethodMap(ClassMethodMaps& maps);
+    void buildIOMethodMap(ClassMethodMaps& maps);
+    
+    // 获取方法
+    llvm::Function* getMethod(const std::string& className, 
+                              const std::string& methodName,
+                              MethodType type = METHOD_VIRTUAL);
+
     llvm::Value* emit_class__class(class__class* _class);
     llvm::Value* emit_class_(Class_ class_);
     llvm::Value* emit_method_class(method_class* method);
@@ -94,6 +111,26 @@ private:
     llvm::Value* emit_program_class(program_class* program);
     llvm::Value* emit_program(Program program);
     FormalParams emit_formals(Formals formals, llvm::Type* classType);
+
+    // ========== 访问器 ==========
+public:
+    // ==================== 构造函数 ====================
+    CodeGenerator();
+    
+    // ==================== 主生成函数 ====================
+    void emit_llvm_ir(Program program);
+    
+    // ==================== 工具函数 ====================
+    void dumpIR();
+    bool verifyModule();
+    
+    // ==================== 访问器 ====================
+    CompilerContext& getContext();
+    SymbolTableManager& getSymbolTable();
+    IRBuilder<>& getIRBuilder();
+    Module& getModule();
+    RuntimeAPI& getRuntimeAPI();
+
 };
 
 #endif // CODEGEN_H

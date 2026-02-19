@@ -67,43 +67,639 @@ RuntimeAPI& CodeGenerator::getRuntimeAPI() {
     }
     return *runtimeAPI.get();
 }
-// ==================== 主生成函数 ====================
-void CodeGenerator::emit_llvm_ir(Program program) {
 
-    emit_program(program);
-    // LLVM 代码生成逻辑
-    std::cout << "Hello, World!" << std::endl;
+// ========== 构建方法映射表 ==========
+void CodeGenerator::buildMethodMaps() {
+    #ifdef DEBUG
+    std::cout << "Building method maps..." << std::endl;
+    #endif
+    
+    RuntimeAPI& runtime = getRuntimeAPI();
+    
+    // 为每个运行时类构建方法映射
+    buildObjectMethodMap(_methodMaps["Object"]);
+    buildIntMethodMap(_methodMaps["Int"]);
+    buildBoolMethodMap(_methodMaps["Bool"]);
+    buildStringMethodMap(_methodMaps["String"]);
+    buildIOMethodMap(_methodMaps["IO"]);
+}
 
-    // 3. 创建一个简单的函数：int main() { return 42; }
-    // 创建函数类型：返回 int，无参数
-    FunctionType *funcType = FunctionType::get(
-        getIRBuilder().getInt32Ty(),  // 返回类型：32位整数
-        false                  // 是否可变参数
-    );
+void CodeGenerator::buildObjectMethodMap(ClassMethodMaps& maps) {
+    RuntimeAPI& runtime = getRuntimeAPI();
     
-    // 创建函数
-    Function *mainFunc = Function::Create(
-        funcType,
-        Function::ExternalLinkage,  // 链接类型
-        "main",                     // 函数名
-        &getModule()
-    );
+    // 虚方法映射
+    maps.virtualMethods = {
+        {"copy", runtime.getObjectCopy()},
+        {"abort", runtime.getObjectAbort()},
+        {"type_name", runtime.getObjectTypeName()},
+        {"toString", runtime.getObjectTypeName()},  // alias
+        {"clone", runtime.getObjectCopy()}           // alias
+    };
     
-    // 4. 创建基本块（函数体）
-    BasicBlock *entry = BasicBlock::Create(_context.getLLVMContext(), "entry", mainFunc);
-    getIRBuilder().SetInsertPoint(entry);
+    // 静态方法映射 (Object 可能没有静态方法)
+    maps.staticMethods = {};
     
-    // 5. 生成返回值 42
-    Value *retVal = getIRBuilder().getInt32(42);
-    getIRBuilder().CreateRet(retVal);
+    // 重写方法映射 (基类没有重写)
+    maps.overrideMethods = {};
+}
+
+void CodeGenerator::buildIntMethodMap(ClassMethodMaps& maps) {
+    RuntimeAPI& runtime = getRuntimeAPI();
     
-    // 6. 验证生成的 IR
-    if (verifyModule()) {
-        errs() << "IR 验证失败!\n";
+    // 虚方法映射
+    maps.virtualMethods = {
+        {"plus", runtime.getIntPlus()},
+        {"minus", runtime.getIntMinus()},
+        {"times", runtime.getIntTimes()},
+        {"divide", runtime.getIntDivide()},
+        {"negate", runtime.getIntNegate()},
+        {"equals", runtime.getIntEquals()},
+        {"less", runtime.getIntLess()},
+        {"toDouble", nullptr},  // 需要自定义实现
+        {"toLong", nullptr}      // 需要自定义实现
+    };
+    
+    // 静态方法映射
+    maps.staticMethods = {
+        {"parseInt", nullptr}  // 静态工厂方法
+    };
+    
+    // 重写方法映射 (从Object继承的方法)
+    maps.overrideMethods = {
+        {"toString", nullptr},   // 需要自定义实现
+        {"hashCode", nullptr},   // 可以返回自身
+        {"equals", runtime.getIntEquals()},
+        {"clone", runtime.getObjectCopy()}
+    };
+}
+
+void CodeGenerator::buildBoolMethodMap(ClassMethodMaps& maps) {
+    RuntimeAPI& runtime = getRuntimeAPI();
+    
+    maps.virtualMethods = {
+        {"not", runtime.getBoolNot()},
+        {"equals", runtime.getBoolEquals()},
+        {"logicalAnd", nullptr},
+        {"logicalOr", nullptr},
+        {"logicalNot", runtime.getBoolNot()}
+    };
+    
+    maps.staticMethods = {};
+    
+    maps.overrideMethods = {
+        {"toString", nullptr},
+        {"hashCode", nullptr},
+        {"equals", runtime.getBoolEquals()}
+    };
+}
+
+void CodeGenerator::buildStringMethodMap(ClassMethodMaps& maps) {
+    RuntimeAPI& runtime = getRuntimeAPI();
+    
+    maps.virtualMethods = {
+        {"length", runtime.getStringLength()},
+        {"concat", runtime.getStringConcat()},
+        {"substr", runtime.getStringSubstr()},
+        {"substring", runtime.getStringSubstr()},
+        {"equals", runtime.getStringEquals()},
+        {"less", runtime.getStringLess()},
+        {"charAt", nullptr},
+        {"indexOf", nullptr},
+        {"toUpperCase", nullptr},
+        {"toLowerCase", nullptr},
+        {"trim", nullptr},
+        {"isEmpty", nullptr}
+    };
+    
+    maps.staticMethods = {
+        {"valueOf", nullptr}  // 静态工厂方法
+    };
+    
+    maps.overrideMethods = {
+        {"toString", nullptr},  // 返回自身
+        {"hashCode", nullptr},  // 需要计算哈希
+        {"equals", runtime.getStringEquals()},
+        {"clone", runtime.getObjectCopy()}
+    };
+}
+
+void CodeGenerator::buildIOMethodMap(ClassMethodMaps& maps) {
+    RuntimeAPI& runtime = getRuntimeAPI();
+    
+    maps.virtualMethods = {
+        {"out_string", runtime.getIOOutString()},
+        {"out_int", runtime.getIOOutInt()},
+        {"in_string", runtime.getIOInString()},
+        {"in_int", runtime.getIOInInt()}
+    };
+    
+    maps.staticMethods = {};
+    maps.overrideMethods = {};  // IO 可能不重写 Object 的方法
+}
+
+// ========== 注册类方法 ==========
+void CodeGenerator::registerClassMethods(ClassLayout& layout) {
+    #ifdef DEBUG
+    std::cout << "Registering methods for class: " << layout.name << std::endl;
+    #endif
+    
+    // 获取该类的映射表
+    auto mapIt = _methodMaps.find(layout.name);
+    if (mapIt == _methodMaps.end()) {
+        std::cerr << "Warning: No method map found for class: " << layout.name << std::endl;
+        return;
     }
     
-    // 7. 打印生成的 LLVM IR
-    getModule().print(outs(), nullptr);
+    const ClassMethodMaps& maps = mapIt->second;
+    
+    // 为每个方法分配函数指针
+    for (auto& method : layout.methods) {
+        llvm::Function* func = nullptr;
+        
+        // 根据方法类型从不同映射表中查找
+        switch (method.type) {
+            case METHOD_VIRTUAL: {
+                auto it = maps.virtualMethods.find(method.name);
+                if (it != maps.virtualMethods.end()) {
+                    func = it->second;
+                }
+                break;
+            }
+            case METHOD_STATIC: {
+                auto it = maps.staticMethods.find(method.name);
+                if (it != maps.staticMethods.end()) {
+                    func = it->second;
+                }
+                break;
+            }
+            case METHOD_OVERRIDE: {
+                auto it = maps.overrideMethods.find(method.name);
+                if (it != maps.overrideMethods.end()) {
+                    func = it->second;
+                }
+                break;
+            }
+        }
+        
+        // 如果在当前类没找到，尝试在父类中查找
+        if (!func && !layout.parentName.empty()) {
+            func = getMethod(layout.parentName, method.name, method.type);
+        }
+        
+        method.func = func;
+        
+        #ifdef DEBUG
+        if (func) {
+            std::cout << "  Method '" << method.name << "' registered" << std::endl;
+        } else {
+            std::cout << "  Method '" << method.name << "' pending implementation" << std::endl;
+        }
+        #endif
+    }
+}
+
+llvm::Function* CodeGenerator::getMethod(const std::string& className, 
+                                         const std::string& methodName,
+                                         MethodType type) {
+    auto classIt = _methodMaps.find(className);
+    if (classIt == _methodMaps.end()) return nullptr;
+    
+    const ClassMethodMaps& maps = classIt->second;
+    
+    switch (type) {
+        case METHOD_VIRTUAL: {
+            auto it = maps.virtualMethods.find(methodName);
+            return it != maps.virtualMethods.end() ? it->second : nullptr;
+        }
+        case METHOD_STATIC: {
+            auto it = maps.staticMethods.find(methodName);
+            return it != maps.staticMethods.end() ? it->second : nullptr;
+        }
+        case METHOD_OVERRIDE: {
+            auto it = maps.overrideMethods.find(methodName);
+            return it != maps.overrideMethods.end() ? it->second : nullptr;
+        }
+    }
+    return nullptr;
+}
+
+void CodeGenerator::runtime_init() {
+    #ifdef DEBUG
+    std::cout << "Initializing runtime classes..." << std::endl;
+    #endif
+    
+    // 1. 初始化基础类布局
+    initObjectClass();
+    initIntClass();
+    initBoolClass();
+    initStringClass();
+    initIOClass();
+    
+    // 2. 构建方法映射表
+    buildMethodMaps();
+    
+    // 3. 创建LLVM类型
+    for (const auto& className : {"Object", "Int", "Bool", "String", "IO"}) {
+        ClassLayout* layout = _symbolTable.findClass(className);
+        if (layout && !layout->type) {
+            build_memory_layout(*layout);
+        }
+    }
+    
+    // 4. 注册方法（使用映射表）
+    for (const auto& className : {"Object", "Int", "Bool", "String", "IO"}) {
+        ClassLayout* layout = _symbolTable.findClass(className);
+        if (layout) {
+            registerClassMethods(*layout);
+        }
+    }
+    
+    // 5. 构建虚表
+    for (const auto& className : {"Object", "Int", "Bool", "String", "IO"}) {
+        ClassLayout* layout = _symbolTable.findClass(className);
+        if (layout && layout->type) {
+            build_vtable(*layout);
+        }
+    }
+    
+    // 6. 生成构造函数
+    for (const auto& className : {"Object", "Int", "Bool", "String", "IO"}) {
+        ClassLayout* layout = _symbolTable.findClass(className);
+        if (layout && layout->vtable) {
+            generate_constructor(*layout);
+        }
+    }
+    
+    // 7. 生成new函数
+    for (const auto& className : {"Object", "Int", "Bool", "String", "IO"}) {
+        ClassLayout* layout = _symbolTable.findClass(className);
+        if (layout && layout->constructor) {
+            layout->newFunc = create_new_function(className, *layout);
+        }
+    }
+    
+    // 8. 初始化字符串常量
+    initStringConstants();
+    
+    #ifdef DEBUG
+    std::cout << "Runtime initialization completed." << std::endl;
+    #endif
+}
+
+// ========== 添加方法类型 ==========
+void CodeGenerator::initObjectClass() {
+    ClassLayout layout;
+    
+    layout.name = "Object";
+    layout.parentName = "";
+    layout.type = nullptr;
+    layout.vtable = nullptr;
+    layout.constructor = nullptr;
+    layout.newFunc = nullptr;
+    layout.classTag = 0;
+    layout.objectSize = 16;
+    
+    layout.ownAttributes = {
+        {"vptr", VariableInfo::createMember(
+            llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(_context.getLLVMContext())),
+            nullptr, "Object")},
+        {"classTag", VariableInfo::createMember(
+            llvm::Type::getInt32Ty(_context.getLLVMContext()),
+            nullptr, "Object")}
+    };
+    
+    // 现在只需要指定方法名和类型，不需要手动关联函数
+    layout.methods = {
+        {"copy", METHOD_VIRTUAL, nullptr,  nullptr, 0},
+        {"abort", METHOD_VIRTUAL, nullptr,  nullptr, 1},
+        {"type_name", METHOD_VIRTUAL, nullptr,  nullptr, 2},
+        {"toString", METHOD_VIRTUAL, nullptr,  nullptr, 3},
+        {"hashCode", METHOD_VIRTUAL, nullptr,  nullptr, 4},
+        {"equals", METHOD_VIRTUAL, nullptr,  nullptr, 5},
+        {"clone", METHOD_VIRTUAL, nullptr,  nullptr, 6}
+    };
+    
+    _symbolTable.registerClass(layout);
+}
+
+void CodeGenerator::initIntClass() {
+    ClassLayout layout;
+    
+    layout.name = "Int";
+    layout.parentName = "Object";
+    layout.type = nullptr;
+    layout.vtable = nullptr;
+    layout.constructor = nullptr;
+    layout.newFunc = nullptr;
+    layout.classTag = 1;
+    layout.objectSize = 24;
+    
+    layout.ownAttributes = {
+        {"value", VariableInfo::createMember(
+            llvm::Type::getInt32Ty(_context.getLLVMContext()),
+            nullptr, "Int")}
+    };
+    
+    layout.methods = {
+        // 重写的方法
+        {"toString", METHOD_OVERRIDE, nullptr,  nullptr, 0},
+        {"hashCode", METHOD_OVERRIDE, nullptr,  nullptr, 1},
+        {"equals", METHOD_OVERRIDE, nullptr,  nullptr, 2},
+        {"clone", METHOD_OVERRIDE, nullptr,  nullptr, 3},
+        
+        // 新的虚方法
+        {"plus", METHOD_VIRTUAL, nullptr,  nullptr, 4},
+        {"minus", METHOD_VIRTUAL, nullptr,  nullptr, 5},
+        {"times", METHOD_VIRTUAL, nullptr,  nullptr, 6},
+        {"divide", METHOD_VIRTUAL, nullptr,  nullptr, 7},
+        {"negate", METHOD_VIRTUAL, nullptr,  nullptr, 8},
+        {"toDouble", METHOD_VIRTUAL, nullptr,  nullptr, 9},
+        {"toLong", METHOD_VIRTUAL, nullptr,  nullptr, 10},
+        
+        // 静态方法
+        {"parseInt", METHOD_STATIC, nullptr, nullptr, -1}
+    };
+    
+    _symbolTable.registerClass(layout);
+}
+
+void CodeGenerator::initBoolClass() {
+    ClassLayout layout;
+    
+    layout.name = "Bool";
+    layout.parentName = "Object";
+    layout.type = nullptr;
+    layout.vtable = nullptr;
+    layout.constructor = nullptr;
+    layout.newFunc = nullptr;
+    layout.classTag = 2;  // Bool 的类标签
+    layout.objectSize = 24;  // Object(16) + value(1) + padding(7)
+    
+    // Bool 类的属性：一个布尔值
+    layout.ownAttributes = {
+        {"value", VariableInfo::createMember(
+            llvm::Type::getInt1Ty(_context.getLLVMContext()),
+            nullptr,
+            "Bool"
+        )}
+    };
+    
+    // Bool 类的方法
+    // 虚表索引：0-3 被 Object 占用，4+ 是 Bool 自己的方法
+    layout.methods = {
+        // 继承自 Object 的方法（重写）
+        {"toString", METHOD_OVERRIDE, nullptr, nullptr, 0},
+        {"hashCode", METHOD_OVERRIDE, nullptr, nullptr, 1},
+        {"equals", METHOD_OVERRIDE, nullptr, nullptr, 2},
+        {"clone", METHOD_OVERRIDE, nullptr, nullptr, 3},
+        
+        // Bool 自己的虚方法
+        {"not", METHOD_VIRTUAL, nullptr, nullptr, 4},
+        {"and", METHOD_VIRTUAL, nullptr, nullptr, 5},
+        {"or", METHOD_VIRTUAL, nullptr, nullptr, 6},
+        {"xor", METHOD_VIRTUAL, nullptr, nullptr, 7},
+        {"logicalAnd", METHOD_VIRTUAL, nullptr, nullptr, 8},
+        {"logicalOr", METHOD_VIRTUAL, nullptr, nullptr, 9},
+        {"logicalNot", METHOD_VIRTUAL, nullptr, nullptr, 10}
+    };
+    
+    _symbolTable.registerClass(layout);
+    
+    #ifdef DEBUG
+    std::cout << "Bool class initialized" << std::endl;
+    #endif
+}
+
+// ==================== String 类初始化 ====================
+void CodeGenerator::initStringClass() {
+    ClassLayout layout;
+    
+    layout.name = "String";
+    layout.parentName = "Object";
+    layout.type = nullptr;
+    layout.vtable = nullptr;
+    layout.constructor = nullptr;
+    layout.newFunc = nullptr;
+    layout.classTag = 3;  // String 的类标签
+    layout.objectSize = 32;  // Object(16) + data(8) + length(4) + hash(4)
+    
+    // String 类的属性
+    layout.ownAttributes = {
+        {"data", VariableInfo::createMember(
+            llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(_context.getLLVMContext())),
+            nullptr,
+            "String"
+        )},
+        {"length", VariableInfo::createMember(
+            llvm::Type::getInt32Ty(_context.getLLVMContext()),
+            nullptr,
+            "String"
+        )},
+        {"hash", VariableInfo::createMember(
+            llvm::Type::getInt32Ty(_context.getLLVMContext()),
+            nullptr,
+            "String"
+        )}
+    };
+    
+    // String 类的方法
+    layout.methods = {
+        // 继承自 Object 的方法（重写）
+        {"toString", METHOD_OVERRIDE, nullptr, nullptr, 0},
+        {"hashCode", METHOD_OVERRIDE, nullptr, nullptr, 1},
+        {"equals", METHOD_OVERRIDE, nullptr, nullptr, 2},
+        {"clone", METHOD_OVERRIDE, nullptr, nullptr, 3},
+        
+        // String 自己的虚方法
+        {"length", METHOD_VIRTUAL, nullptr, nullptr, 4},
+        {"concat", METHOD_VIRTUAL, nullptr, nullptr, 5},
+        {"substr", METHOD_VIRTUAL, nullptr, nullptr, 6},
+        {"charAt", METHOD_VIRTUAL, nullptr, nullptr, 7},
+        {"indexOf", METHOD_VIRTUAL, nullptr, nullptr, 8},
+        {"lastIndexOf", METHOD_VIRTUAL, nullptr, nullptr, 9},
+        {"toUpperCase", METHOD_VIRTUAL, nullptr, nullptr, 10},
+        {"toLowerCase", METHOD_VIRTUAL, nullptr, nullptr, 11},
+        {"trim", METHOD_VIRTUAL, nullptr, nullptr, 12},
+        {"isEmpty", METHOD_VIRTUAL, nullptr, nullptr, 13},
+        {"compareTo", METHOD_VIRTUAL, nullptr, nullptr, 14},
+        {"startsWith", METHOD_VIRTUAL, nullptr, nullptr, 15},
+        {"endsWith", METHOD_VIRTUAL, nullptr, nullptr, 16},
+        
+        // 静态方法
+        {"valueOf", METHOD_STATIC, nullptr, nullptr, -1},
+        {"format", METHOD_STATIC, nullptr, nullptr, -1}
+    };
+    
+    _symbolTable.registerClass(layout);
+    
+    #ifdef DEBUG
+    std::cout << "String class initialized" << std::endl;
+    #endif
+}
+
+// ==================== IO 类初始化 ====================
+void CodeGenerator::initIOClass() {
+    ClassLayout layout;
+    
+    layout.name = "IO";
+    layout.parentName = "Object";
+    layout.type = nullptr;
+    layout.vtable = nullptr;
+    layout.constructor = nullptr;
+    layout.newFunc = nullptr;
+    layout.classTag = 4;  // IO 的类标签
+    layout.objectSize = 16;  // 只有 Object 部分，没有自己的属性
+    
+    // IO 类没有自己的属性
+    layout.ownAttributes = {};
+    
+    // IO 类的方法
+    layout.methods = {
+        // 继承自 Object 的方法（可能不重写）
+        {"toString", METHOD_VIRTUAL, nullptr, nullptr, 0},
+        {"hashCode", METHOD_VIRTUAL, nullptr, nullptr, 1},
+        {"equals", METHOD_VIRTUAL, nullptr, nullptr, 2},
+        {"clone", METHOD_VIRTUAL, nullptr, nullptr, 3},
+        
+        // IO 自己的虚方法
+        {"out_string", METHOD_VIRTUAL, nullptr, nullptr, 4},
+        {"out_int", METHOD_VIRTUAL, nullptr, nullptr, 5},
+        {"in_string", METHOD_VIRTUAL, nullptr, nullptr, 6},
+        {"in_int", METHOD_VIRTUAL, nullptr, nullptr, 7},
+        {"out_char", METHOD_VIRTUAL, nullptr, nullptr, 8},
+        {"in_char", METHOD_VIRTUAL, nullptr, nullptr, 9},
+        {"flush", METHOD_VIRTUAL, nullptr, nullptr, 10}
+    };
+    
+    _symbolTable.registerClass(layout);
+}
+
+void CodeGenerator::initStringConstants() {
+    #ifdef DEBUG
+    std::cout << "Initializing string constants..." << std::endl;
+    #endif
+    
+    // 预定义的字符串常量
+    const std::vector<std::string> predefinedStrings = {
+        "",                           // 空字符串
+        "true",                       // true 的字符串表示
+        "false",                      // false 的字符串表示
+        "null",                       // null 的字符串表示
+        "Object",                     // 类名
+        "Int",                        
+        "Bool",
+        "String",
+        "IO",
+        "Out of memory",              // 错误信息
+        "Division by zero",            // 错误信息
+        "Array index out of bounds",   // 错误信息
+        "Null pointer exception",      // 错误信息
+        "Class cast error"             // 错误信息
+    };
+    
+    // 获取 String 类的布局，用于创建 String 对象
+    ClassLayout* stringLayout = _symbolTable.findClass("String");
+    if (!stringLayout) {
+        std::cerr << "Error: String class not found when initializing constants" << std::endl;
+        return;
+    }
+    
+    // 为每个预定义字符串创建常量
+    for (const auto& str : predefinedStrings) {
+        // 创建字符串常量
+        llvm::Constant* strConstant = llvm::ConstantDataArray::getString(
+            _context.getLLVMContext(),
+            str,
+            true  // 添加 null 终止符
+        );
+        
+        // 生成全局变量名
+        std::hash<std::string> hasher;
+        std::string globalName = ".str.const." + std::to_string(hasher(str));
+        
+        // 创建全局变量存储字符串数据
+        llvm::GlobalVariable* globalStr = new llvm::GlobalVariable(
+            getModule(),
+            strConstant->getType(),
+            true,  // constant
+            llvm::GlobalValue::PrivateLinkage,
+            strConstant,
+            globalName
+        );
+        
+        // 获取指向字符串数据的 i8* 指针
+        llvm::Constant* zero = llvm::ConstantInt::get(
+            llvm::Type::getInt32Ty(_context.getLLVMContext()), 
+            0
+        );
+        llvm::Constant* indices[] = {zero, zero};
+        llvm::Constant* strDataPtr = llvm::ConstantExpr::getInBoundsGetElementPtr(
+            globalStr->getValueType(),
+            globalStr,
+            indices
+        );
+        
+        // 创建 String 对象
+        // 注意：这里需要在堆上分配 String 对象并初始化
+        // 为了简化，我们可以先缓存字符串数据指针
+        _symbolTable.registerString(str, strDataPtr);
+        
+        #ifdef DEBUG
+        std::cout << "  Registered string constant: \"" << str << "\"" << std::endl;
+        #endif
+    }
+    
+    // 创建常用的数字字符串常量（0-9）
+    for (int i = 0; i <= 9; i++) {
+        std::string numStr = std::to_string(i);
+        llvm::Constant* numConstant = llvm::ConstantDataArray::getString(
+            _context.getLLVMContext(),
+            numStr,
+            true
+        );
+        
+        std::string globalName = ".str.num." + numStr;
+        
+        llvm::GlobalVariable* globalNum = new llvm::GlobalVariable(
+            getModule(),
+            numConstant->getType(),
+            true,
+            llvm::GlobalValue::PrivateLinkage,
+            numConstant,
+            globalName
+        );
+        
+        llvm::Constant* zero = llvm::ConstantInt::get(
+            llvm::Type::getInt32Ty(_context.getLLVMContext()), 
+            0
+        );
+        llvm::Constant* indices[] = {zero, zero};
+        llvm::Constant* numDataPtr = llvm::ConstantExpr::getInBoundsGetElementPtr(
+            globalNum->getValueType(),
+            globalNum,
+            indices
+        );
+        
+        _symbolTable.registerString(numStr, numDataPtr);
+    }
+    
+    #ifdef DEBUG
+    std::cout << "String constants initialization completed." << std::endl;
+    #endif
+}
+
+// ==================== 主生成函数 ====================
+void CodeGenerator::emit_llvm_ir(Program program) {
+    #ifdef DEBUG
+    std::cout << "Starting LLVM IR generation..." << std::endl;
+    #endif
+    
+    runtime_init();
+    emit_program(program);
+
+    if (!verifyModule()) {
+        std::cerr << "Warning: Module verification failed!" << std::endl;
+    }
 }
 
 // ==================== 工具函数 ====================
@@ -639,6 +1235,11 @@ llvm::Value *CodeGenerator::emit_method_class(method_class* method)
         return exist_func;
     }
 
+    // 检查是否是内置方法（已经在映射表中）
+    llvm::Function* builtin_func = getMethod(className, method->name->get_string(), METHOD_VIRTUAL);
+    if (builtin_func) {
+        return builtin_func;
+    }
     getSymbolTable().enterScope();
     // 确定返回类型
     std::string returnTypeName = method->return_type->get_string();

@@ -7,6 +7,7 @@ using namespace llvm;
 
 RuntimeAPI::RuntimeAPI(LLVMContext& ctx, Module& mod)
     : context(ctx), _module(mod) {
+    declareAllFunctions();    
 }
 
 void RuntimeAPI::declareAllFunctions() {

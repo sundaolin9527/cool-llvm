@@ -18,6 +18,13 @@
 // AST 类型前向声明
 struct method_class;
 
+// 方法类型
+enum MethodType {
+    METHOD_VIRTUAL,
+    METHOD_OVERRIDE,
+    METHOD_STATIC
+};
+
 // ==================== 存储类别定义 ====================
 enum class StorageClass {
     MEMBER = 1,    // 成员变量（实例相关）
@@ -100,6 +107,7 @@ struct ClassLayout {
     //类方法信息
     struct ClassMethodInfo {
         std::string name;
+        MethodType type;
         method_class* method;
         llvm::Function* func;
         int vtableIndex;
