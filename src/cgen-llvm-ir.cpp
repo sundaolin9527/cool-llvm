@@ -2024,14 +2024,14 @@ llvm::Value* CodeGenerator::emit_object_class(object_class* expression) {
     std::cout << "emit_object_class" << std::endl;
     #endif
     if (expression == nullptr) return nullptr;
-    std::cout << expression->name->get_string() << std::endl;
+    // std::cout << expression->name->get_string() << std::endl;
 
     VariableInfo* varInfo = findVariable(getSymbolTable().getCurrentClassName(), expression->name->get_string());
     if (!varInfo || !varInfo->value) {
         std::cout << "VariableInfo not found" << std::endl;
         return nullptr;
     }
-
+    // std::cout << varInfo->typeName << std::endl;
     return getIRBuilder().CreateLoad(mapCoolTypeToLLVM(varInfo->typeName), varInfo->value, expression->name->get_string());
 }
 
