@@ -18,7 +18,7 @@
 using namespace llvm;
 
 // 形式参数类型定义
-using FormalParams = std::pair<std::vector<std::string>, std::vector<Type*>>;
+using FormalParams = std::pair<std::vector<std::string>, std::vector<std::string>>;
 
 // ==================== 代码生成器类 ====================
 class CodeGenerator {
@@ -110,7 +110,7 @@ private:
     llvm::Value* emit_case(Case _case);
     llvm::Value* emit_program_class(program_class* program);
     llvm::Value* emit_program(Program program);
-    FormalParams emit_formals(Formals formals, llvm::Type* classType);
+    FormalParams emit_formals(Formals formals);
 
     // ========== 访问器 ==========
 public:

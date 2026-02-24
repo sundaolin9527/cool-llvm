@@ -37,33 +37,33 @@ enum class StorageClass {
 
 // ==================== 变量信息结构 ====================
 struct VariableInfo {
-    llvm::Type* type = nullptr;
     StorageClass storage;  // 存储类别
     llvm::Value* value = nullptr;    // LLVM值
     std::string className;           // 所属类名（对成员变量和静态成员）
-    
+    std::string typeName;            // 变量的类型
+
     VariableInfo() = default;
-    VariableInfo(llvm::Type* t, StorageClass s, llvm::Value* v = nullptr, 
-                const std::string& cls = "")
-        : type(t), storage(s), value(v), className(cls) {}
+    VariableInfo(StorageClass s, llvm::Value* v = nullptr, 
+                const std::string& cls = "", const std::string t = "")
+        : storage(s), value(v), className(cls), typeName(t) {}
     
-    static VariableInfo create(llvm::Type* t, StorageClass s, llvm::Value* v = nullptr, std::string className="") {
-        return VariableInfo(t, s, v, className);
+    static VariableInfo create(StorageClass s, llvm::Value* v = nullptr, std::string className="", std::string typeName="") {
+        return VariableInfo(s, v, className, typeName);
     }
-    static VariableInfo createMember(llvm::Type* t, llvm::Value* address = nullptr, std::string className="") {
-        return create(t, StorageClass::MEMBER, address, className);
+    static VariableInfo createMember(llvm::Value* address = nullptr, std::string className="", std::string typeName="") {
+        return create(StorageClass::MEMBER, address, className, typeName);
     }
-    static VariableInfo createStaticMember(llvm::Type* t, llvm::Value* v = nullptr, std::string className="") {
-        return create(t, StorageClass::STATIC_MEMBER, v, className);
+    static VariableInfo createStaticMember(llvm::Value* v = nullptr, std::string className="", std::string typeName="") {
+        return create(StorageClass::STATIC_MEMBER, v, className, typeName);
     }
-    static VariableInfo createLocal(llvm::Type* t, llvm::Value* allocaInst = nullptr, std::string className="") {
-        return create(t, StorageClass::LOCAL, allocaInst, className);
+    static VariableInfo createLocal(llvm::Value* allocaInst = nullptr, std::string className="", std::string typeName="") {
+        return create(StorageClass::LOCAL, allocaInst, className, typeName);
     }
-    static VariableInfo createParam(llvm::Type* t, llvm::Value* paramValue = nullptr, std::string className="") {
-        return create(t, StorageClass::PARAM, paramValue, className);
+    static VariableInfo createParam(llvm::Value* paramValue = nullptr, std::string className="", std::string typeName="") {
+        return create(StorageClass::PARAM, paramValue, className, typeName);
     }
-    static VariableInfo createGlobal(llvm::Type* t, llvm::Value* globalVar = nullptr, std::string className="") {
-        return create(t, StorageClass::_GLOBAL, globalVar, className);
+    static VariableInfo createGlobal(llvm::Value* globalVar = nullptr, std::string className="", std::string typeName="") {
+        return create(StorageClass::_GLOBAL, globalVar, className, typeName);
     }
     void updateValue(llvm::Value* newValue) {
         value = newValue;
@@ -82,13 +82,6 @@ struct VariableInfo {
     }
 
     std::string toString() const {
-        // 获取类型字符串
-        std::string typeStr = "";
-        if (type) {
-            llvm::raw_string_ostream tso(typeStr);
-            type->print(tso);
-        }
-        
         // 获取值字符串
         std::string valueStr = "";
         if (value) {
@@ -96,7 +89,7 @@ struct VariableInfo {
             value->print(vso);
         }
         
-        return "VariableInfo{type='" + typeStr + "', storage=" + 
+        return "VariableInfo{type='" + typeName + "', storage=" + 
                storageClassToString(storage) + ", value='" + 
                valueStr + "', className='" + className + "'}";
     }
@@ -205,12 +198,12 @@ public:
     llvm::Function* findMethod(const std::string& className, const std::string& methodName);
 
     // 变量添加
-    bool addLocalVar(const std::string& name, llvm::Type* type, 
-                    llvm::Value* value = nullptr);
-    bool addParam(const std::string& name, llvm::Type* type,
+    bool addLocalVar(const std::string& name, const std::string& typeName, 
+                                llvm::Value* value);
+    bool addParam(const std::string& name, const std::string& typeName, 
                  llvm::Value* value = nullptr);
     bool addStaticLocalVar(const std::string& funcName, const std::string& varName,
-                          llvm::Type* type, llvm::Value* value = nullptr);
+                          const std::string& typeName, llvm::Value* value = nullptr);
     
     // 变量查找
     VariableInfo* findStaticLocalVar(const std::string& funcName, 
@@ -218,14 +211,15 @@ public:
     VariableInfo* findGlobalVar(const std::string& name);
     
     // 类操作
-    void addGlobalVar(const std::string& name, llvm::Type* type,
+    void addGlobalVar(const std::string& name, const std::string& typeName, 
                      llvm::Value* value = nullptr);
     void registerClass(const ClassLayout& cls);
     ClassLayout* findClass(const std::string& name);
     std::vector<ClassLayout*> getInheritanceChain(const std::string& className);
     
     // 变量查找
-    VariableInfo* findVariable(const std::string& context, const std::string& name);
+    VariableInfo* findVariable(const std::string& className, 
+                                       const std::string& varName);
     VariableInfo* findVariableEx(const std::string& className,
                                 const std::string& currentFunc,
                                 const std::string& varName);

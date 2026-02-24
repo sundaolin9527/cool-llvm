@@ -361,11 +361,9 @@ void CodeGenerator::initObjectClass() {
     
     layout.ownAttributes = {
         {"vptr", VariableInfo::createMember(
-            llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(_context.getLLVMContext())),
-            nullptr, "Object")},
+            nullptr, "Object", "Object")},
         {"classTag", VariableInfo::createMember(
-            llvm::Type::getInt32Ty(_context.getLLVMContext()),
-            nullptr, "Object")}
+            nullptr, "Object", "Int")}
     };
     
     // 现在只需要指定方法名和类型，不需要手动关联函数
@@ -396,8 +394,7 @@ void CodeGenerator::initIntClass() {
     
     layout.ownAttributes = {
         {"value", VariableInfo::createMember(
-            llvm::Type::getInt32Ty(_context.getLLVMContext()),
-            nullptr, "Int")}
+            nullptr, "Int", "Int")}
     };
     
     layout.methods = {
@@ -438,9 +435,8 @@ void CodeGenerator::initBoolClass() {
     // Bool 类的属性：一个布尔值
     layout.ownAttributes = {
         {"value", VariableInfo::createMember(
-            llvm::Type::getInt1Ty(_context.getLLVMContext()),
             nullptr,
-            "Bool"
+            "Bool", "Bool"
         )}
     };
     
@@ -486,19 +482,19 @@ void CodeGenerator::initStringClass() {
     // String 类的属性
     layout.ownAttributes = {
         {"data", VariableInfo::createMember(
-            llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(_context.getLLVMContext())),
             nullptr,
+            "String", 
             "String"
         )},
         {"length", VariableInfo::createMember(
-            llvm::Type::getInt32Ty(_context.getLLVMContext()),
             nullptr,
-            "String"
+            "String", 
+            "Int"
         )},
         {"hash", VariableInfo::createMember(
-            llvm::Type::getInt32Ty(_context.getLLVMContext()),
             nullptr,
-            "String"
+            "String", 
+            "Int"
         )}
     };
     
@@ -949,8 +945,7 @@ ClassLayout CodeGenerator::collect_class_info(class__class* _class)
             // 收集当前类自己的属性
             std::string attrName = attr->name->get_string();
             std::string typeName = attr->type_decl->get_string();
-            llvm::Type* type = mapCoolTypeToLLVM(typeName);
-            classLayout.ownAttributes.emplace(attrName, VariableInfo::createMember(type, nullptr, classLayout.name));
+            classLayout.ownAttributes.emplace(attrName, VariableInfo::createMember(nullptr, classLayout.name, typeName));
         }
         else if (method_class *method = dynamic_cast<method_class*>(feature)) {
             // 收集当前类自己的方法
@@ -993,7 +988,7 @@ void CodeGenerator::build_memory_layout(ClassLayout& classLayout)
     // 添加当前类自己的属性
     for (const auto& attr : classLayout.ownAttributes) {
         const VariableInfo& info = attr.second;
-        structFields.push_back(info.type);
+        structFields.push_back(mapCoolTypeToLLVM(info.typeName));
     }
     
     // 创建结构体类型
@@ -1170,7 +1165,7 @@ void CodeGenerator::generate_constructor(ClassLayout& classLayout)
     unsigned i = 0;
     for (auto& attr : classLayout.ownAttributes) {
         VariableInfo& varInfo = attr.second;
-        llvm::Type* fieldType = varInfo.type;
+        llvm::Type* fieldType = mapCoolTypeToLLVM(varInfo.typeName);
         llvm::Value* fieldAddr = getIRBuilder().CreateStructGEP(classLayout.type, thisPtr, startIndex + i);
         
         if (fieldType->isIntegerTy(32)) {
@@ -1186,7 +1181,7 @@ void CodeGenerator::generate_constructor(ClassLayout& classLayout)
     }
     // 每一个类都有一个名为self的成员变量
     classLayout.ownAttributes.emplace("self", VariableInfo::createMember(
-        classLayout.type, classLayout.constructor, classLayout.name));
+        classLayout.constructor, classLayout.name, classLayout.name));
 
     getIRBuilder().CreateRetVoid();
     return;
@@ -1247,10 +1242,15 @@ llvm::Value *CodeGenerator::emit_method_class(method_class* method)
     returnType = mapCoolTypeToLLVM(returnTypeName);
 
     // 构建参数列表
-    FormalParams params = emit_formals(method->formals, classLayout->type);
+    FormalParams params = emit_formals(method->formals);
     std::vector<std::string>& paramNames = params.first;
-    std::vector<llvm::Type*>& paramTypes = params.second;
-    
+    std::vector<std::string>& paramTypeNames = params.second;
+    std::vector<llvm::Type*> paramTypes;
+    paramTypes.reserve(paramTypeNames.size());
+
+    for (const auto& typeName : paramTypeNames) {
+        paramTypes.push_back(mapCoolTypeToLLVM(typeName));
+    }
     llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
     
     std::string funcName = className + "." + method->name->get_string();
@@ -1293,7 +1293,7 @@ llvm::Value *CodeGenerator::emit_method_class(method_class* method)
             );
             // 存储参数值到分配的空间
             getIRBuilder().CreateStore(&arg, alloca);
-            curr_scope->addVariable(paramNames[i], VariableInfo::createParam(paramTypes[i], alloca, className));
+            curr_scope->addVariable(paramNames[i], VariableInfo::createParam(alloca, className, paramTypeNames[i]));
             i++;
         }
         
@@ -1346,19 +1346,19 @@ llvm::Value *CodeGenerator::emit_feature(Feature feature)
     return nullptr;
 }
 
-FormalParams CodeGenerator::emit_formals(Formals formals, llvm::Type* classType)
+FormalParams CodeGenerator::emit_formals(Formals formals)
 {
     #ifdef DEBUG
     std::cout << "emit_formals" << std::endl;
     #endif
     std::vector<std::string> paramNames;
-    std::vector<llvm::Type*> paramTypes;
+    std::vector<std::string> paramTypeNames;
 
     paramNames.push_back("this");
-    paramTypes.push_back(classType->getPointerTo());
+    paramTypeNames.push_back(getSymbolTable().getCurrentClassName());
     
     if (formals == nullptr) {
-        return {paramNames, paramTypes};
+        return {paramNames, paramTypeNames};
     }
     
 
@@ -1369,15 +1369,12 @@ FormalParams CodeGenerator::emit_formals(Formals formals, llvm::Type* classType)
         
         std::string paramName = formal->name->get_string();
         std::string paramTypeName = formal->type_decl->get_string();
-        llvm::Type* paramType = mapCoolTypeToLLVM(paramTypeName);
-        
-        assert(paramType != nullptr && "mapCoolTypeToLLVM returned null");
 
         paramNames.push_back(paramName);
-        paramTypes.push_back(paramType);
+        paramTypeNames.push_back(paramTypeName);
     }
     
-    return {paramNames, paramTypes};
+    return {paramNames, paramTypeNames};
 }
 
 llvm::Value *CodeGenerator::emit_assign_class(assign_class* expression)
@@ -1789,7 +1786,7 @@ llvm::Value *CodeGenerator::emit_let_class(let_class* expression)
     }
 
     (getSymbolTable().currentScope())->addVariable(varName, 
-        VariableInfo::createParam(decl_type, alloca, getSymbolTable().getCurrentClassName()));
+        VariableInfo::createParam(alloca, getSymbolTable().getCurrentClassName(), expression->type_decl->get_string()));
 
     llvm::Value* result = emit_expression(expression->body);
 
@@ -2035,7 +2032,7 @@ llvm::Value* CodeGenerator::emit_object_class(object_class* expression) {
         return nullptr;
     }
 
-    return getIRBuilder().CreateLoad(varInfo->type,varInfo->value, expression->name->get_string());
+    return getIRBuilder().CreateLoad(mapCoolTypeToLLVM(varInfo->typeName), varInfo->value, expression->name->get_string());
 }
 
 llvm::Value* CodeGenerator::emit_expression(Expression e) {
