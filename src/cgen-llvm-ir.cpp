@@ -963,48 +963,110 @@ ClassLayout CodeGenerator::collect_class_info(class__class* _class)
 }
 
 /**
- * 构建类的内存布局（结构体类型定义）
+ * 构建类的内存布局（结构体类型定义）- 与C++兼容
  */
 void CodeGenerator::build_memory_layout(ClassLayout& classLayout)
 {
+    #ifdef DEBUG
+    std::cout << "build_memory_layout: " << classLayout.name << std::endl;
+    #endif
     std::vector<llvm::Type*> structFields;
     SymbolTableManager& symbol_table = getSymbolTable();
-
-    // 对象头
-    structFields.push_back(llvm::Type::getInt32Ty(_context.getLLVMContext()));      // Class tag
-    structFields.push_back(llvm::Type::getInt32Ty(_context.getLLVMContext()));      // Object size
-    structFields.push_back(llvm::Type::getInt8PtrTy(_context.getLLVMContext())->getPointerTo()); // Dispatch pointer
     
-    // 处理父类
-    llvm::StructType* parentType = nullptr;
+    // 判断类是否有虚函数（多态类）
+    bool hasVirtualFunctions = !classLayout.methods.empty();
+    
+    // 处理继承链
     if (!classLayout.parentName.empty()) {
+        // 有父类：直接将父类类型作为第一个字段（包含父类的所有内容）
         ClassLayout* parentLayout = symbol_table.findClass(classLayout.parentName);
         if (parentLayout && parentLayout->type) {
-            parentType = parentLayout->type;
-            structFields.push_back(parentType);
+            structFields.push_back(parentLayout->type);
+        }
+    } else {
+        // 根类：如果有虚函数，添加vptr
+        if (hasVirtualFunctions) {
+            // vptr是指向虚函数表的指针
+            llvm::Type* vptrType = llvm::PointerType::get(
+                llvm::Type::getInt8Ty(_context.getLLVMContext()), 0);
+            structFields.push_back(vptrType);
         }
     }
     
-    // 添加当前类自己的属性
+    // 添加当前类自己的属性（数据成员）
     for (const auto& attr : classLayout.ownAttributes) {
         const VariableInfo& info = attr.second;
         structFields.push_back(mapCoolTypeToLLVM(info.typeName));
     }
     
     // 创建结构体类型
-    classLayout.type = llvm::StructType::create(_context.getLLVMContext(), structFields, classLayout.name);
+    std::string typeName = "class." + classLayout.name;
+    classLayout.type = llvm::StructType::create(_context.getLLVMContext(), 
+                                                structFields, 
+                                                typeName);
     
-    // 计算类大小
-    const llvm::DataLayout DL = getModule().getDataLayout();
+    // 计算类大小和字段偏移量
+    const llvm::DataLayout& DL = getModule().getDataLayout();
     classLayout.objectSize = DL.getTypeAllocSize(classLayout.type);
+    
+    // 计算每个字段的偏移量并更新VariableInfo
+    const llvm::StructLayout* layout = DL.getStructLayout(classLayout.type);
+    unsigned fieldIndex = 0;
+    
+    // 处理继承链的偏移
+    if (!classLayout.parentName.empty()) {
+        // 跳过父类子对象，但需要为父类的字段建立正确的偏移关系
+        ClassLayout* parentLayout = symbol_table.findClass(classLayout.parentName);
+        if (parentLayout) {
+            // 父类子对象的基地址偏移
+            size_t baseOffset = layout->getElementOffset(fieldIndex);
+            
+            // 更新父类中所有成员的偏移量（相对于当前类对象）
+            for (auto& parentAttr : parentLayout->ownAttributes) {
+                VariableInfo& info = parentAttr.second;
+                // 父类成员的偏移 = 父类子对象偏移 + 父类中的原始偏移
+                info.offset = baseOffset + getFieldOffset(parentLayout, info.typeName);
+            }
+        }
+        fieldIndex++;
+    } else if (hasVirtualFunctions) {
+        // 根类且有虚函数：跳过vptr（不需要更新VariableInfo，因为vptr不是用户定义的成员）
+        fieldIndex++;
+    }
+    
+    // 更新当前类数据成员的偏移
+    for (auto& attr : classLayout.ownAttributes) {
+        VariableInfo& info = attr.second;
+        info.offset = layout->getElementOffset(fieldIndex++);
+        info.className = classLayout.name;  // 确保设置所属类名
+    }
+    
     return;
 }
 
 /**
- * 构建虚表和虚表索引
+ * 辅助函数：获取字段在类中的偏移
+ */
+size_t CodeGenerator::getFieldOffset(ClassLayout* classLayout, const std::string& fieldName)
+{
+    #ifdef DEBUG
+    std::cout << "getFieldOffset: " << classLayout->name << std::endl;
+    #endif
+    auto it = classLayout->ownAttributes.find(fieldName);
+    if (it != classLayout->ownAttributes.end()) {
+        return it->second.offset;
+    }
+    return 0;
+}
+
+/**
+ * 构建虚表和虚表索引 - 与C++兼容
  */
 void CodeGenerator::build_vtable(ClassLayout& classLayout)
 {
+    #ifdef DEBUG
+    std::cout << "build_vtable: " << classLayout.name << std::endl;
+    #endif
     SymbolTableManager& symbol_table = getSymbolTable();
     std::string parentName = classLayout.parentName;
     ClassLayout* parentLayout = nullptr;
@@ -1013,88 +1075,88 @@ void CodeGenerator::build_vtable(ClassLayout& classLayout)
         parentLayout = symbol_table.findClass(parentName);
     }
     
-    //=== 步骤1：合并方法（处理继承和重写） ========================
-    std::map<std::string, ClassLayout::ClassMethodInfo> allMethods;
-    std::vector<std::string> allMethodNamesInOrder;
+    //=== 步骤1：收集所有虚函数（按正确顺序） ====================
+    std::vector<ClassLayout::ClassMethodInfo> allVirtualMethods;
+    std::map<std::string, int> methodNameToIndex;  // 用于快速查找覆盖
     
-    // 继承父类的方法
+    // 1.1 首先继承父类的虚函数
     if (parentLayout) {
-        for (const auto& method : parentLayout->methods) {
-            allMethods[method.name] = method;
+        // 确保父类的虚表已构建
+        if (!parentLayout->vtable) {
+            build_vtable(*parentLayout);
+        }
+        
+        // 复制父类的虚函数（跳过前两个ABI条目）
+        for (size_t i = 0; i < parentLayout->methods.size(); ++i) {
+            allVirtualMethods.push_back(parentLayout->methods[i]);
+            methodNameToIndex[parentLayout->methods[i].name] = i + 2; // +2 跳过ABI条目
         }
     }
     
-    // 处理当前类的方法（可能重写父类方法）
+    // 1.2 处理当前类的虚函数（覆盖或新增）
     for (auto& methodInfo : classLayout.methods) {
-        if (allMethods.find(methodInfo.name) != allMethods.end()) {
-            // 重写父类方法
-            methodInfo.vtableIndex = allMethods[methodInfo.name].vtableIndex;
-            allMethods[methodInfo.name] = methodInfo;
+        auto it = methodNameToIndex.find(methodInfo.name);
+        if (it != methodNameToIndex.end()) {
+            // 覆盖父类虚函数
+            int index = it->second;
+            methodInfo.vtableIndex = index;
+            allVirtualMethods[index - 2] = methodInfo;  // -2 转换回0基索引
         } else {
-            // 新方法
-            methodInfo.vtableIndex = allMethods.size() + 1;
-            allMethods[methodInfo.name] = methodInfo;
-            allMethodNamesInOrder.push_back(methodInfo.name);
+            // 新增虚函数
+            methodInfo.vtableIndex = allVirtualMethods.size() + 2;
+            allVirtualMethods.push_back(methodInfo);
+            methodNameToIndex[methodInfo.name] = methodInfo.vtableIndex;
         }
     }
     
-    // 更新classLayout中的方法信息
-    classLayout.methods.clear();
-    for (const auto& methodName : allMethodNamesInOrder) {
-        classLayout.methods.push_back(allMethods[methodName]);
-    }
+    // 更新classLayout中的方法信息（保持正确顺序）
+    classLayout.methods = allVirtualMethods;
     
-    //=== 步骤2：构建虚表条目 =====================================
+    //=== 步骤2：构建虚表条目（符合Itanium C++ ABI） ==============
     std::vector<llvm::Constant*> vtableEntries;
     
-    // 第一个条目：对象大小
+    // 2.1 第一个条目：offset_to_top (派生类到最左基类的偏移，通常为0)
+    llvm::Constant* offsetToTop = llvm::ConstantInt::get(
+        llvm::Type::getInt64Ty(_context.getLLVMContext()), 0);
+    vtableEntries.push_back(llvm::ConstantExpr::getIntToPtr(
+        offsetToTop, llvm::Type::getInt8PtrTy(_context.getLLVMContext())));
+    
+    // 2.2 第二个条目：class tag (使用你的classTag)
+    llvm::Constant* classTagConst = llvm::ConstantInt::get(
+        llvm::Type::getInt32Ty(_context.getLLVMContext()), 
+        classLayout.classTag
+    );
+    vtableEntries.push_back(llvm::ConstantExpr::getIntToPtr(
+        classTagConst, llvm::Type::getInt8PtrTy(_context.getLLVMContext())));
+    
+    // 2.3 第三个条目：object size (虽然不在标准C++虚表中，但如果你需要)
     llvm::Constant* objectSizeConst = llvm::ConstantInt::get(
         llvm::Type::getInt32Ty(_context.getLLVMContext()), 
         classLayout.objectSize
     );
     vtableEntries.push_back(llvm::ConstantExpr::getIntToPtr(
-        objectSizeConst, 
-        llvm::Type::getInt8PtrTy(_context.getLLVMContext())
-    ));
+        objectSizeConst, llvm::Type::getInt8PtrTy(_context.getLLVMContext())));
     
-    // 添加方法条目
-    for (const auto& methodName : allMethodNamesInOrder) {
+    // 2.4 添加所有虚函数指针
+    for (const auto& methodInfo : allVirtualMethods) {
         llvm::Constant* funcPtr = nullptr;
         
-        // 在当前类的方法中查找
-        auto it = std::find_if(classLayout.methods.begin(), classLayout.methods.end(),
-                              [&methodName](const ClassLayout::ClassMethodInfo& m) {
-                                  return m.name == methodName;
-                              });
-        
-        if (it != classLayout.methods.end() && it->func) {
-            // 当前类的方法（已生成或重写）
+        if (methodInfo.func) {
+            // 将函数指针转换为i8*
             funcPtr = llvm::ConstantExpr::getBitCast(
-                it->func, 
+                methodInfo.func,
                 llvm::Type::getInt8PtrTy(_context.getLLVMContext())
             );
-        } else if (parentLayout) {
-            // 在父类中查找
-            for (const auto& parentMethod : parentLayout->methods) {
-                if (parentMethod.name == methodName && parentMethod.func) {
-                    funcPtr = llvm::ConstantExpr::getBitCast(
-                        parentMethod.func, 
-                        llvm::Type::getInt8PtrTy(_context.getLLVMContext())
-                    );
-                    break;
-                }
-            }
-        }
-        
-        // 如果没有找到，创建空指针
-        if (!funcPtr) {
-            funcPtr = llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(_context.getLLVMContext()));
+        } else {
+            // 错误：虚函数没有实现
+            funcPtr = llvm::Constant::getNullValue(
+                llvm::Type::getInt8PtrTy(_context.getLLVMContext()));
         }
         
         vtableEntries.push_back(funcPtr);
     }
     
-    //=== 步骤3：创建虚表全局变量 =================================
+    //=== 步骤3：创建虚表全局变量 ================================
     llvm::ArrayType* vtableType = llvm::ArrayType::get(
         llvm::Type::getInt8PtrTy(_context.getLLVMContext()),
         vtableEntries.size()
@@ -1102,34 +1164,198 @@ void CodeGenerator::build_vtable(ClassLayout& classLayout)
     
     llvm::Constant* vtableInit = llvm::ConstantArray::get(vtableType, vtableEntries);
     
-    std::string vtableName = "vtable." + classLayout.name;
+    // 虚表名称
+    std::string vtableName = "_ZTV" + classLayout.name;
+    
     classLayout.vtable = new llvm::GlobalVariable(
         getModule(),
         vtableType,
-        true,
-        llvm::GlobalValue::PrivateLinkage,
+        true,  // constant
+        llvm::GlobalValue::ExternalLinkage,  // 使用ExternalLinkage以便其他模块访问
         vtableInit,
         vtableName
     );
-
+    
+    // 设置虚表的对齐
+    classLayout.vtable->setAlignment(llvm::Align(8));
+    #ifdef DEBUG
+    std::cout << "build_vtable done" << std::endl;
+    #endif
     return;
 }
 
 /**
- * 生成类的构造函数
+ * 生成访问成员的代码
+ */
+llvm::Value* CodeGenerator::generateMemberAccess(
+    llvm::Value* objectPtr, 
+    const std::string& className,
+    const std::string& memberName)
+{
+    #ifdef DEBUG
+    std::cout << "generateMemberAccess: " << className << std::endl;
+    #endif
+    SymbolTableManager& symbol_table = getSymbolTable();
+    ClassLayout* classLayout = symbol_table.findClass(className);
+    if (!classLayout) {
+        return nullptr;
+    }
+    
+    // 查找成员信息
+    auto it = classLayout->ownAttributes.find(memberName);
+    if (it == classLayout->ownAttributes.end()) {
+        // 可能在父类中
+        if (!classLayout->parentName.empty()) {
+            return generateMemberAccess(objectPtr, classLayout->parentName, memberName);
+        }
+        return nullptr;
+    }
+    
+    VariableInfo& memberInfo = it->second;
+    llvm::LLVMContext& ctx = _context.getLLVMContext();
+    
+    // 计算成员指针：对象指针 + 偏移量
+    if (memberInfo.offset == 0) {
+        return objectPtr;
+    }
+    
+    // 将对象指针转换为 i8*
+    llvm::Value* bytePtr = _builder->CreateBitCast(
+        objectPtr, 
+        llvm::Type::getInt8PtrTy(ctx)
+    );
+    
+    // 使用 GEP 计算偏移
+    llvm::Value* offsetPtr = _builder->CreateGEP(
+        llvm::Type::getInt8Ty(ctx),  // 元素类型是 i8
+        bytePtr,
+        llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx), memberInfo.offset)
+    );
+    
+    // 转换为成员类型的指针
+    llvm::Type* memberType = mapCoolTypeToLLVM(memberInfo.typeName);
+    return _builder->CreateBitCast(
+        offsetPtr,
+        llvm::PointerType::get(memberType, 0)
+    );
+}
+
+/**
+ * 生成虚函数调用
+ */
+llvm::Value* CodeGenerator::generateVirtualCall(
+    llvm::Value* objectPtr,
+    const std::string& className,
+    const std::string& methodName)
+{
+    #ifdef DEBUG
+    std::cout << "generateVirtualCall: " << className << std::endl;
+    #endif
+    SymbolTableManager& symbol_table = getSymbolTable();
+    ClassLayout* classLayout = symbol_table.findClass(className);
+    if (!classLayout) {
+        return nullptr;
+    }
+    
+    // 查找方法信息
+    ClassLayout::ClassMethodInfo* methodInfo = nullptr;
+    for (auto& m : classLayout->methods) {
+        if (m.name == methodName) {
+            methodInfo = &m;
+            break;
+        }
+    }
+    
+    if (!methodInfo || methodInfo->vtableIndex < 0) {
+        return nullptr;
+    }
+    
+    llvm::LLVMContext& ctx = _context.getLLVMContext();
+    
+    // 1. 获取vptr（对象的前8个字节）
+    // 将对象指针转换为 i8** (指向vptr的指针)
+    llvm::Type* i8Ty = llvm::Type::getInt8Ty(ctx);
+    llvm::Type* i8PtrTy = llvm::PointerType::get(i8Ty, 0);
+    llvm::Type* vptrPtrTy = llvm::PointerType::get(i8PtrTy, 0);
+    
+    llvm::Value* vptrPtr = _builder->CreateBitCast(
+        objectPtr,
+        vptrPtrTy
+    );
+    
+    // 2. 加载虚表指针 (vtable) - 这是 i8*
+    llvm::Value* vtable = _builder->CreateLoad(
+        i8PtrTy,
+        vptrPtr,
+        "vtable"
+    );
+    
+    // 3. 计算虚函数指针在虚表中的位置
+    // 方法A: 使用指针运算（最安全）
+    // 将vtable转换为i64进行整数运算
+    llvm::Value* vtableAsInt = _builder->CreatePtrToInt(
+        vtable,
+        llvm::Type::getInt64Ty(ctx)
+    );
+    
+    // 计算偏移：vtableIndex * 8 (每个指针8字节)
+    llvm::Value* offset = llvm::ConstantInt::get(
+        llvm::Type::getInt64Ty(ctx),
+        methodInfo->vtableIndex * 8
+    );
+    
+    llvm::Value* methodPtrAddressAsInt = _builder->CreateAdd(vtableAsInt, offset);
+    
+    // 转换为指针
+    llvm::Value* methodPtrPtr = _builder->CreateIntToPtr(
+        methodPtrAddressAsInt,
+        llvm::PointerType::get(i8PtrTy, 0)
+    );
+    
+    // 4. 加载函数指针
+    llvm::Value* methodPtr = _builder->CreateLoad(
+        i8PtrTy,
+        methodPtrPtr,
+        "method_ptr"
+    );
+    
+    // 5. 获取函数类型
+    if (!methodInfo->func) {
+        return nullptr;
+    }
+    llvm::FunctionType* funcType = methodInfo->func->getFunctionType();
+    
+    // 6. 转换为正确的函数指针类型
+    llvm::Value* typedMethodPtr = _builder->CreateBitCast(
+        methodPtr,
+        llvm::PointerType::get(funcType, 0)
+    );
+    
+    // 7. 准备参数
+    std::vector<llvm::Value*> args;
+    args.push_back(objectPtr);
+    
+    // 8. 调用虚函数
+    return _builder->CreateCall(funcType, typedMethodPtr, args, "virtual_call");
+}
+
+/**
+ * 生成类的构造函数 - 与C++兼容版本
  */
 void CodeGenerator::generate_constructor(ClassLayout& classLayout)
 {
+    SymbolTableManager& symbol_table = getSymbolTable();
+    
     llvm::FunctionType* ctorType = llvm::FunctionType::get(
         llvm::Type::getVoidTy(_context.getLLVMContext()),
-        {classLayout.type->getPointerTo()},
+        {llvm::PointerType::get(classLayout.type, 0)},  // this指针
         false
     );
     
     classLayout.constructor = llvm::Function::Create(
         ctorType,
         llvm::Function::ExternalLinkage,
-        classLayout.name + ".ctor",
+        "_ZN" + std::to_string(classLayout.name.length()) + classLayout.name + "C2Ev",  // C++名字修饰
         getModule()
     );
     
@@ -1137,54 +1363,117 @@ void CodeGenerator::generate_constructor(ClassLayout& classLayout)
     getIRBuilder().SetInsertPoint(entryBB);
     
     llvm::Value* thisPtr = classLayout.constructor->arg_begin();
+    thisPtr->setName("this");
     
-    // 设置class tag
-    llvm::Value* tagAddr = getIRBuilder().CreateStructGEP(classLayout.type, thisPtr, 0);
-    getIRBuilder().CreateStore(
-        llvm::ConstantInt::get(llvm::Type::getInt32Ty(_context.getLLVMContext()), classLayout.classTag),
-        tagAddr
-    );
+    // 判断类是否有虚函数
+    bool hasVirtualFunctions = !classLayout.methods.empty();
     
-    // 设置object size
-    llvm::Value* sizeAddr = getIRBuilder().CreateStructGEP(classLayout.type, thisPtr, 1);
-    getIRBuilder().CreateStore(
-        llvm::ConstantInt::get(llvm::Type::getInt32Ty(_context.getLLVMContext()), classLayout.objectSize),
-        sizeAddr
-    );
+    // 处理继承链：先调用父类构造函数
+    if (!classLayout.parentName.empty()) {
+        ClassLayout* parentLayout = symbol_table.findClass(classLayout.parentName);
+        if (parentLayout && parentLayout->constructor) {
+            // 获取父类子对象的指针
+            llvm::Value* parentSubobject = getIRBuilder().CreateStructGEP(
+                classLayout.type,
+                thisPtr,
+                0,  // 父类子对象总是在索引0
+                "parent.subobject"
+            );
+            
+            // 调用父类构造函数
+            getIRBuilder().CreateCall(parentLayout->constructor, {parentSubobject});
+        }
+    }
     
-    // 设置dispatch pointer
-    llvm::Value* dispatchAddr = getIRBuilder().CreateStructGEP(classLayout.type, thisPtr, 2);
-    llvm::Value* vtablePtr = getIRBuilder().CreateBitCast(
-        classLayout.vtable,
-        llvm::Type::getInt8PtrTy(_context.getLLVMContext())->getPointerTo()
-    );
-    getIRBuilder().CreateStore(vtablePtr, dispatchAddr);
+    // 设置vptr（如果是根类且有虚函数）
+    if (classLayout.parentName.empty() && hasVirtualFunctions) {
+        // vptr在索引0
+        llvm::Value* vptrPtr = getIRBuilder().CreateStructGEP(
+            classLayout.type,
+            thisPtr,
+            0,
+            "vptr.ptr"
+        );
+        
+        // 获取虚表指针
+        llvm::Value* vtablePtr = getIRBuilder().CreateBitCast(
+            classLayout.vtable,
+            llvm::PointerType::get(llvm::Type::getInt8Ty(_context.getLLVMContext()), 0)
+        );
+        
+        // 存储vptr
+        getIRBuilder().CreateStore(vtablePtr, vptrPtr);
+    }
     
-    // 初始化属性
-    unsigned startIndex = 3; // 3个头字段
+    // 初始化当前类的属性
+    unsigned fieldIndex = getFieldStartIndex(classLayout);
     unsigned i = 0;
+    
     for (auto& attr : classLayout.ownAttributes) {
+        // 跳过self成员（稍后处理）
+        if (attr.first == "self") continue;
+        
         VariableInfo& varInfo = attr.second;
         llvm::Type* fieldType = mapCoolTypeToLLVM(varInfo.typeName);
-        llvm::Value* fieldAddr = getIRBuilder().CreateStructGEP(classLayout.type, thisPtr, startIndex + i);
         
+        // 获取字段地址
+        llvm::Value* fieldAddr = getIRBuilder().CreateStructGEP(
+            classLayout.type,
+            thisPtr,
+            fieldIndex + i,
+            attr.first + ".addr"
+        );
+        
+        // 初始化为默认值
         if (fieldType->isIntegerTy(32)) {
-            getIRBuilder().CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(_context.getLLVMContext()), 0), fieldAddr);
+            getIRBuilder().CreateStore(
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(_context.getLLVMContext()), 0),
+                fieldAddr
+            );
         } else if (fieldType->isIntegerTy(1)) {
-            getIRBuilder().CreateStore(llvm::ConstantInt::getFalse(_context.getLLVMContext()), fieldAddr);
+            getIRBuilder().CreateStore(
+                llvm::ConstantInt::getFalse(_context.getLLVMContext()),
+                fieldAddr
+            );
         } else if (fieldType->isPointerTy()) {
-            getIRBuilder().CreateStore(llvm::Constant::getNullValue(fieldType), fieldAddr);
+            getIRBuilder().CreateStore(
+                llvm::Constant::getNullValue(fieldType),
+                fieldAddr
+            );
         }
         
+        // 更新变量信息中的值（地址）
         varInfo.updateValue(fieldAddr);
         i++;
     }
-    // 每一个类都有一个名为self的成员变量
-    classLayout.ownAttributes.emplace("self", VariableInfo::createMember(
-        classLayout.constructor, classLayout.name, classLayout.name));
-
+    
+    // 设置self成员变量（指向对象本身）
+    classLayout.ownAttributes["self"] = VariableInfo::createMember(
+        thisPtr, 
+        classLayout.name, 
+        classLayout.name
+    );
+    
     getIRBuilder().CreateRetVoid();
-    return;
+}
+
+/**
+ * 辅助函数：获取当前类数据成员在结构体中的起始索引
+ */
+unsigned CodeGenerator::getFieldStartIndex(ClassLayout& classLayout)
+{
+    unsigned index = 0;
+    
+    // 如果有父类，父类子对象占一个字段
+    if (!classLayout.parentName.empty()) {
+        index++;  // 父类子对象
+    } 
+    // 如果是根类且有虚函数，vptr占一个字段
+    else if (!classLayout.methods.empty()) {
+        index++;  // vptr
+    }
+    
+    return index;
 }
 
 /**

@@ -41,7 +41,8 @@ struct VariableInfo {
     llvm::Value* value = nullptr;    // LLVM值
     std::string className;           // 所属类名（对成员变量和静态成员）
     std::string typeName;            // 变量的类型
-
+    std::size_t offset;
+    
     VariableInfo() = default;
     VariableInfo(StorageClass s, llvm::Value* v = nullptr, 
                 const std::string& cls = "", const std::string t = "")

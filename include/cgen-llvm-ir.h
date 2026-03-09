@@ -44,8 +44,12 @@ private:
     VariableInfo* findVariable(const std::string& className, const std::string& varName);
     ClassLayout collect_class_info(class__class* _class);
     void build_memory_layout(ClassLayout& classLayout);
+    size_t getFieldOffset(ClassLayout* classLayout, const std::string& fieldName);
     void build_vtable(ClassLayout& classLayout);
+    llvm::Value* generateMemberAccess(llvm::Value* objectPtr, const std::string& className, const std::string& memberName);
+    llvm::Value* generateVirtualCall(llvm::Value* objectPtr, const std::string& className, const std::string& methodName);
     void generate_constructor(ClassLayout& classLayout);
+    unsigned getFieldStartIndex(ClassLayout& classLayout);
     void generate_methods(ClassLayout& classLayout);
     uint32_t allocate_class_tag();
     void default_initialize_object(llvm::Value* objPtr, ClassLayout& classLayout);
