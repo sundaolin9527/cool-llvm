@@ -208,40 +208,56 @@ std::vector<ClassLayout*> SymbolTableManager::getInheritanceChain(const std::str
 }
 
 // 变量查找
-VariableInfo* SymbolTableManager::findVariable(const std::string& className, 
-                                       const std::string& varName) {
+VariableInfo* SymbolTableManager::findVariable(const std::string& className, const std::string& varName) 
+{
+    #ifdef DEBUG
+    std::cout << "findVariable: " << className << "::" << varName << std::endl;
+    #endif
+    
     // 1. 查找局部变量和参数
     for (auto it = scopeStack.rbegin(); it != scopeStack.rend(); ++it) {
         if (auto* var = it->findVariable(varName)) {
             return var;
         }
     }
-    
-    // 2. 查找成员变量
-    ClassLayout* classLayout = nullptr;
-    if ((classLayout = findClass(className)) != nullptr) {
-        // 查找变量
-        auto attrIt = classLayout->ownAttributes.find(varName);
-        if (attrIt == classLayout->ownAttributes.end()) {
-            std::cout << "Variable '" + varName + "' not found in class " + className << std::endl;
-        }
 
-        VariableInfo& varInfo = attrIt->second;
-        if (!varInfo.value) {
-            std::cout << "Variable '" + varName + "' has no address initialized" << std::endl;
-        }
-
-        return &varInfo;
-    }
-    else
+    // 2. 然后在类继承链中查找成员变量
+    VariableInfo* var = findMemberVariableInHierarchy(className, varName);
+    if (var != nullptr)
     {
-        std::cout << "Class not found: " + className << std::endl;
+        return var;
     }
 
-    
     // 3. 查找全局变量
     if (auto* global = findGlobalVar(varName)) {
         return global;
+    }
+    return nullptr;
+}
+
+VariableInfo* SymbolTableManager::findMemberVariableInHierarchy(const std::string& className, const std::string& varName) 
+{
+    ClassLayout* classLayout = findClass(className);
+    if (!classLayout) {
+        return nullptr;
+    }
+    
+    // 在当前类中查找
+    auto it = classLayout->ownAttributes.find(varName);
+    if (it != classLayout->ownAttributes.end()) {
+        #ifdef DEBUG
+        std::cout << "  Found in class " << className << " (member variable)" << std::endl;
+        #endif
+        return &it->second;
+    }
+    
+    // 在父类中查找（递归）
+    if (!classLayout->parentName.empty()) {
+        #ifdef DEBUG
+        std::cout << "  Not found in " << className << ", trying parent: " 
+                  << classLayout->parentName << std::endl;
+        #endif
+        return findMemberVariableInHierarchy(classLayout->parentName, varName);
     }
     
     return nullptr;

@@ -221,6 +221,7 @@ public:
     // 变量查找
     VariableInfo* findVariable(const std::string& className, 
                                        const std::string& varName);
+    VariableInfo* findMemberVariableInHierarchy(const std::string& className, const std::string& varName);
     VariableInfo* findVariableEx(const std::string& className,
                                 const std::string& currentFunc,
                                 const std::string& varName);

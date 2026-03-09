@@ -45,7 +45,9 @@ private:
     ClassLayout collect_class_info(class__class* _class);
     void build_memory_layout(ClassLayout& classLayout);
     size_t getFieldOffset(ClassLayout* classLayout, const std::string& fieldName);
+    llvm::Constant* createTypeInfo(const std::string& className, uint32_t classTag);
     void build_vtable(ClassLayout& classLayout);
+    std::string findFirstField(ClassLayout* classLayout);
     llvm::Value* generateMemberAccess(llvm::Value* objectPtr, const std::string& className, const std::string& memberName);
     llvm::Value* generateVirtualCall(llvm::Value* objectPtr, const std::string& className, const std::string& methodName);
     void generate_constructor(ClassLayout& classLayout);
