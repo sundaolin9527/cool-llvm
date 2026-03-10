@@ -1814,7 +1814,7 @@ llvm::Value *CodeGenerator::emit_static_dispatch_class(static_dispatch_class* ex
     if (expression == nullptr) return nullptr;
 }
 
-// 函数调用, 需要区分实例函数，静态函数，运行时的函数调用
+// 函数调用
 llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
 {
     #ifdef DEBUG
@@ -1823,57 +1823,111 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
     if (expression == nullptr) return nullptr; 
 
     llvm::IRBuilder<> &builder = getIRBuilder();
+    
     // 1. 获取对象指针
-    llvm::Value *ptr = emit_expression(expression->expr);
+    llvm::Value *obj_ptr = emit_expression(expression->expr);
+    if (obj_ptr == nullptr) return nullptr;
     
-    // 2. 准备参数
-    std::vector<llvm::Value*> args;
-    args.push_back(ptr); // 第一个参数是对象指针（this指针）
+    // 2. 获取虚表指针
+    // 需要提供类型参数给CreateLoad
+    llvm::Type *vtable_ptr_type = llvm::PointerType::get(_context.getLLVMContext(), 0);    
+    llvm::Value *vtable_ptr = builder.CreateLoad(
+        vtable_ptr_type, 
+        obj_ptr, 
+        "vtable.ptr"
+    );
     
-    Expressions actuals = expression->actual; 
-    for (int i = actuals->first(); actuals->more(i); i = actuals->next(i)) {
-        llvm::Value *arg_value = emit_expression(actuals->nth(i));
-        args.push_back(arg_value);
-    }
+    // 3. 获取方法名对应的符号
+    std::string method_name = expression->name->get_string();
     
-    // 3. 获取函数名
-    // std::string func_name = _context.getNewClassName() + "." + expression->name->get_string();
-    std::string func_name = expression->name->get_string();
-    std::cout << func_name << std::endl;
-
-    // 4. 获取函数
-    llvm::Function *func = getModule().getFunction(func_name);
-    if (!func) {
-        // 构建参数类型列表
-        std::vector<llvm::Type*> param_types;
-        for (auto &arg : args) {
-            param_types.push_back(arg->getType());
+    // 4. 从对象类型中获取类名
+    std::string class_name = get_class_name_from_type(obj_ptr->getType());
+    
+    // 5. 在类层次结构中查找方法信息（包括父类）
+    int method_index = -1;
+    std::string defining_class;
+    
+    std::vector<ClassLayout*> inheritance_chain = getSymbolTable().getInheritanceChain(class_name);
+    
+    for (auto* cls : inheritance_chain) {
+        for (const auto& method_info : cls->methods) {
+            if (method_info.name == method_name) {
+                method_index = method_info.vtableIndex;
+                defining_class = cls->name;
+                break;
+            }
         }
-        
-        // 创建不透明指针作为占位符
-        llvm::Type *return_type = llvm::PointerType::get(
-            llvm::StructType::create(_context.getLLVMContext(), "placeholder"), 
-            0
-        );
-        
-        // 创建函数类型
-        llvm::FunctionType *func_type = llvm::FunctionType::get(
-            return_type, param_types, false);
-        
-        // 创建函数声明
-        func = llvm::Function::Create(
-            func_type,
-            llvm::Function::ExternalLinkage,
-            func_name,
-            &getModule()
-        );
+        if (method_index >= 0) break;
     }
-
-    // 5. 生成调用指令
-    llvm::Value *result = builder.CreateCall(func, args);
-
-    // 6. 返回调用结果
+    
+    if (method_index < 0) {
+        std::cerr << "Error: Method " << method_name << " not found in class hierarchy of " 
+                  << class_name << std::endl;
+        return nullptr;
+    }
+    
+    // 6. 从虚表中加载方法指针
+    int vtable_offset = method_index;
+    
+    // CreateConstGEP1_64需要类型参数
+    llvm::Type *vtable_entry_type = llvm::PointerType::get(_context.getLLVMContext(), 0);
+    llvm::Value *method_ptr_addr = builder.CreateConstGEP1_64(
+        vtable_entry_type,  // 元素类型
+        vtable_ptr, 
+        vtable_offset, 
+        "method.ptr.addr"
+    );
+    
+    llvm::Value *method_ptr = builder.CreateLoad(
+        vtable_entry_type,
+        method_ptr_addr,
+        "method.ptr"
+    );
+    
+    // 7. 准备方法调用的参数
+    std::vector<llvm::Value*> args;
+    args.push_back(obj_ptr);  // this指针
+    if (expression->actual != nullptr) {
+        for (int i = expression->actual->first(); expression->actual->more(i); i = expression->actual->next(i)) {
+            llvm::Value* arg = emit_expression(expression->actual->nth(i));
+            if (arg == nullptr) return nullptr;
+            args.push_back(arg);
+        }
+    }
+    
+    // 8. 获取方法对应的LLVM函数（用于类型信息）
+    llvm::Function* method_func = nullptr;
+    ClassLayout* def_class = getSymbolTable().findClass(defining_class);
+    if (def_class) {
+        for (const auto& method_info : def_class->methods) {
+            if (method_info.name == method_name) {
+                method_func = method_info.func;
+                break;
+            }
+        }
+    }
+    
+    if (method_func == nullptr) {
+        std::cerr << "Error: Cannot find LLVM function for method " 
+                  << method_name << std::endl;
+        return nullptr;
+    }
+    
+    // 9. 创建调用
+    llvm::Value *result = builder.CreateCall(
+        method_func->getFunctionType(),
+        method_ptr,
+        args,
+        "dispatch.result"
+    );
+    
     return result;
+}
+
+// (todo*)
+std::string CodeGenerator::get_class_name_from_type(llvm::Type *type)
+{
+    return getSymbolTable().getCurrentClassName();
 }
 
 llvm::Value *CodeGenerator::emit_cond_class(cond_class* expression)
@@ -2551,6 +2605,7 @@ llvm::Value *CodeGenerator::emit_program_class(program_class *program)
     for(int i = classes->first(); classes->more(i); i = classes->next(i))
     {
         emit_class_(classes->nth(i));
+        // getModule().print(outs(), nullptr);
         #ifdef DEBUG
         if (i == 4) {
             getModule().print(outs(), nullptr);

@@ -56,6 +56,7 @@ private:
     uint32_t allocate_class_tag();
     void default_initialize_object(llvm::Value* objPtr, ClassLayout& classLayout);
     llvm::Function* create_new_function(const std::string& className, ClassLayout& classLayout);
+    std::string get_class_name_from_type(llvm::Type *type);
     
     // ========== 运行时初始化 ==========
     void runtime_init();
