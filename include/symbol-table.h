@@ -219,8 +219,7 @@ public:
     std::vector<ClassLayout*> getInheritanceChain(const std::string& className);
     
     // 变量查找
-    VariableInfo* findVariable(const std::string& className, 
-                                       const std::string& varName);
+    VariableInfo* findVariable(const std::string& varName);
     VariableInfo* findMemberVariableInHierarchy(const std::string& className, const std::string& varName);
     VariableInfo* findVariableEx(const std::string& className,
                                 const std::string& currentFunc,

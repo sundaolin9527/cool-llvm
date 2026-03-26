@@ -8,8 +8,14 @@ void SymbolTableManager::ScopeFrame::addVariable(const std::string& name, const 
 }
 
 VariableInfo* SymbolTableManager::ScopeFrame::findVariable(const std::string& name) {
+    #if DEBUG
+    std::cout << "SymbolTableManager::ScopeFrame::findVariable: " << name << std::endl;
+    #endif
     for (auto& entry : varList) {
         if (entry.name == name) {
+            #if DEBUG
+            std::cout << "Found ScopeFrame VariableInfo: " << entry.name << std::endl;
+            #endif
             return &entry.info;
         }
     }
@@ -208,21 +214,24 @@ std::vector<ClassLayout*> SymbolTableManager::getInheritanceChain(const std::str
 }
 
 // 变量查找
-VariableInfo* SymbolTableManager::findVariable(const std::string& className, const std::string& varName) 
+VariableInfo* SymbolTableManager::findVariable(const std::string& varName) 
 {
     #ifdef DEBUG
-    std::cout << "findVariable: " << className << "::" << varName << std::endl;
+    std::cout << "findVariable: " << varName << std::endl;
     #endif
     
     // 1. 查找局部变量和参数
     for (auto it = scopeStack.rbegin(); it != scopeStack.rend(); ++it) {
         if (auto* var = it->findVariable(varName)) {
+            #ifdef DEBUG
+            std::cout << "findVariable Local: " << varName << std::endl;
+            #endif
             return var;
         }
     }
 
     // 2. 然后在类继承链中查找成员变量
-    VariableInfo* var = findMemberVariableInHierarchy(className, varName);
+    VariableInfo* var = findMemberVariableInHierarchy(getCurrentClassName(), varName);
     if (var != nullptr)
     {
         return var;

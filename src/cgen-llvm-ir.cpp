@@ -2076,7 +2076,7 @@ llvm::Value *CodeGenerator::emit_assign_class(assign_class* expression)
         return nullptr;
     }
 
-    VariableInfo* varInfo = findVariable(getSymbolTable().getCurrentClassName(), expression->name->get_string());
+    VariableInfo* varInfo = findVariable(expression->name->get_string());
     if (!varInfo) 
     {
         std::cerr << "Error: VariableInfo is null" << std::endl;
@@ -2753,9 +2753,9 @@ llvm::Value* CodeGenerator::emit_no_expr_class(no_expr_class* expression) {
     return nullptr;
 }
 
-VariableInfo* CodeGenerator::findVariable(const std::string& className, const std::string& varName) 
+VariableInfo* CodeGenerator::findVariable(const std::string& varName)
 {
-    return _symbolTable.findVariable(className, varName);
+    return _symbolTable.findVariable(varName);
 }
 
 // 标识符处理
@@ -2767,7 +2767,7 @@ llvm::Value* CodeGenerator::emit_object_class(object_class* expression) {
     if (expression == nullptr) return nullptr;
     // std::cout << expression->name->get_string() << std::endl;
 
-    VariableInfo* varInfo = findVariable(getSymbolTable().getCurrentClassName(), expression->name->get_string());
+    VariableInfo* varInfo = findVariable(expression->name->get_string());
     if (!varInfo || !varInfo->value) {
         #ifdef DEBUG
         std::cout << "VariableInfo not found" << std::endl;

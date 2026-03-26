@@ -41,7 +41,7 @@ private:
 private:
     // ========== 类构建函数 ==========
     llvm::Type* mapCoolTypeToLLVM(const std::string& typeName);
-    VariableInfo* findVariable(const std::string& className, const std::string& varName);
+    VariableInfo* findVariable(const std::string& varName);
     ClassLayout collect_class_info(class__class* _class);
     void build_memory_layout(ClassLayout& classLayout);
     size_t getFieldOffset(ClassLayout* classLayout, const std::string& fieldName);
