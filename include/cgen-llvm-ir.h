@@ -57,7 +57,8 @@ private:
     void default_initialize_object(llvm::Value* objPtr, ClassLayout& classLayout);
     llvm::Function* create_new_function(const std::string& className, ClassLayout& classLayout);
     std::string get_class_name_from_type(llvm::Type *type);
-    
+    void generate_method_prototypes(ClassLayout& classLayout);
+    void generate_method_bodies(ClassLayout& classLayout);
     // ========== 运行时初始化 ==========
     void runtime_init();
     void initObjectClass();
@@ -117,7 +118,7 @@ private:
     llvm::Value* emit_case(Case _case);
     llvm::Value* emit_program_class(program_class* program);
     llvm::Value* emit_program(Program program);
-    FormalParams emit_formals(Formals formals);
+    FormalParams emit_formals(Formals formals, bool usePlaceholderThis = false);
 
     // ========== 访问器 ==========
 public:

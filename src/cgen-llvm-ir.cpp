@@ -5,31 +5,68 @@
 #include "cgen-context.h"
 
 llvm::Type* CodeGenerator::mapCoolTypeToLLVM(const std::string& typeName) {
+    #ifdef DEBUG
+    std::cout << "    mapCoolTypeToLLVM: " << typeName << std::endl;
+    #endif
     if (typeName == "Int") {
+        #ifdef DEBUG
+        std::cout << "      -> i32" << std::endl;
+        #endif
         return llvm::Type::getInt32Ty(_context.getLLVMContext());
     } else if (typeName == "Bool") {
+        #ifdef DEBUG
+        std::cout << "      -> i1" << std::endl;
+        #endif
         return llvm::Type::getInt1Ty(_context.getLLVMContext());
     } else if (typeName == "String") {
-        return llvm::Type::getInt8PtrTy(_context.getLLVMContext());  // char*
+        #ifdef DEBUG
+        std::cout << "      -> i8*" << std::endl;
+        #endif
+        return llvm::Type::getInt8PtrTy(_context.getLLVMContext());
     } else if (typeName == "SELF_TYPE") {
-        // 当前类类型
         llvm::StructType* currentClassType = _symbolTable.getCurrentClassType();
-        return (currentClassType == nullptr) ? nullptr: currentClassType->getPointerTo();
+        if (currentClassType) {
+            #ifdef DEBUG
+            std::cout << "      -> self type pointer" << std::endl;
+            #endif
+            return currentClassType->getPointerTo();
+        } else {
+            #ifdef DEBUG
+            std::cout << "      -> self type is null, using i8*" << std::endl;
+            #endif
+            return llvm::PointerType::get(llvm::Type::getInt8Ty(_context.getLLVMContext()), 0);
+        }
+    } else if (typeName == "_PLACEHOLDER_") {
+        #ifdef DEBUG
+        std::cout << "      -> placeholder i8*" << std::endl;
+        #endif
+        return llvm::PointerType::get(llvm::Type::getInt8Ty(_context.getLLVMContext()), 0);
     } else if (typeName == "Object") {
-        // Object 是所有类的基类
+        #ifdef DEBUG
+        std::cout << "      -> Object pointer" << std::endl;
+        #endif
         return llvm::Type::getInt8PtrTy(_context.getLLVMContext())->getPointerTo();
     } else if (typeName == "IO") {
-        // IO 类
+        #ifdef DEBUG
+        std::cout << "      -> IO pointer" << std::endl;
+        #endif
         return llvm::Type::getInt8PtrTy(_context.getLLVMContext())->getPointerTo();
     }
     
     // 尝试查找已定义的结构体类型
+    #ifdef DEBUG
+    std::cout << "      Trying to find struct: " << typeName << std::endl;
+    #endif
     llvm::StructType* existingType = llvm::StructType::getTypeByName(_context.getLLVMContext(), typeName);
     if (existingType) {
+        #ifdef DEBUG
+        std::cout << "      Found existing struct" << std::endl;
+        #endif
         return llvm::PointerType::get(existingType, 0);
     }
-    
-    // 默认：作为指向对象的指针（二级指针）
+    #ifdef DEBUG
+    std::cout << "      Using default i8*" << std::endl;
+    #endif
     return llvm::Type::getInt8PtrTy(_context.getLLVMContext())->getPointerTo();
 }
 
@@ -904,25 +941,239 @@ llvm::Value *CodeGenerator::emit_class__class(class__class* _class)
     //=== 阶段2：构建内存布局 ==========================================
     build_memory_layout(classLayout);
     
-    //=== 阶段3：构建虚表 ==============================================
+    //=== 阶段3：生成方法函数原型（只生成声明）=========================
+    generate_method_prototypes(classLayout);
+    
+    //=== 阶段4：构建虚表（现在可以获取函数指针）=======================
     build_vtable(classLayout);
     
-    //=== 阶段4：分配class tag ========================================
+    //=== 阶段5：分配class tag ========================================
     classLayout.classTag = allocate_class_tag();
     
-    //=== 阶段5：生成构造函数 ==========================================
+    //=== 阶段6：生成构造函数 ==========================================
     generate_constructor(classLayout);
     
-    //=== 阶段6：生成new函数 ==========================================
+    //=== 阶段7：生成new函数 ==========================================
     classLayout.newFunc = create_new_function(className, classLayout);
     
     // 注册类到符号表
     symbol_table.registerClass(classLayout);
     
-    //=== 阶段7：生成方法函数 ==========================================
-    generate_methods(classLayout);
+    //=== 阶段8：生成方法函数体（生成完整的函数实现）===================
+    generate_method_bodies(classLayout);
     
     return classLayout.newFunc;
+}
+
+/**
+ * 第一阶段：生成方法函数原型（只生成声明，不生成函数体）
+ * 这样虚表构建时可以获取函数指针
+ */
+void CodeGenerator::generate_method_prototypes(ClassLayout& classLayout)
+{
+    #ifdef DEBUG
+    std::cout << "generate_method_prototypes for: " << classLayout.name << std::endl;
+    #endif
+    
+    getSymbolTable().enterClass(classLayout.name);
+    
+    for (auto& methodInfo : classLayout.methods) {
+        if (methodInfo.method) {
+            std::cout << "  Processing method: " << methodInfo.name << std::endl;
+            
+            // 检查是否已经有函数（可能是内置方法）
+            if (methodInfo.func != nullptr) {
+                std::cout << "    Already has function, skipping" << std::endl;
+                continue;
+            }
+            
+            // 检查是否是内置方法（已经在映射表中）
+            llvm::Function* builtin_func = getMethod(classLayout.name, methodInfo.name, METHOD_VIRTUAL);
+            if (builtin_func) {
+                #ifdef DEBUG
+                std::cout << "    Built-in method found" << std::endl;
+                #endif
+                methodInfo.func = builtin_func;
+                continue;
+            }
+            
+            // 创建函数原型
+            std::string returnTypeName = methodInfo.method->return_type->get_string();
+            #ifdef DEBUG
+            std::cout << "    Return type: " << returnTypeName << std::endl;
+            #endif
+            llvm::Type* returnType = mapCoolTypeToLLVM(returnTypeName);
+            if (!returnType) {
+                std::cerr << "    Error: Failed to map return type: " << returnTypeName << std::endl;
+                continue;
+            }
+            
+            // 使用占位符
+            #ifdef DEBUG
+            std::cout << "    Calling emit_formals with placeholder..." << std::endl;
+            #endif
+            FormalParams params = emit_formals(methodInfo.method->formals, true);
+            std::vector<std::string>& paramNames = params.first;
+            std::vector<std::string>& paramTypeNames = params.second;
+            #ifdef DEBUG
+            std::cout << "    Parameter count: " << paramNames.size() << std::endl;
+            
+            for (size_t i = 0; i < paramNames.size(); i++) {
+                std::cout << "      param[" << i << "]: " << paramNames[i] 
+                          << " : " << paramTypeNames[i] << std::endl;
+            }
+            #endif
+            std::vector<llvm::Type*> paramTypes;
+            for (const auto& typeName : paramTypeNames) {
+                #ifdef DEBUG
+                std::cout << "    Mapping type: " << typeName << std::endl;
+                #endif
+                llvm::Type* paramType = mapCoolTypeToLLVM(typeName);
+                if (!paramType) {
+                    std::cerr << "    Error: Failed to map parameter type: " << typeName << std::endl;
+                    continue;
+                }
+                paramTypes.push_back(paramType);
+            }
+            #ifdef DEBUG
+            std::cout << "    Creating function type..." << std::endl;
+            #endif
+            llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
+            std::string funcName = classLayout.name + "." + methodInfo.name;
+            #ifdef DEBUG
+            std::cout << "    Creating function: " << funcName << std::endl;
+            #endif
+            llvm::Function* func = llvm::Function::Create(
+                funcType,
+                llvm::Function::ExternalLinkage,
+                funcName,
+                getModule()
+            );
+            
+            // 设置参数名称
+            size_t i = 0;
+            for (auto& arg : func->args()) {
+                if (i < paramNames.size()) {
+                    arg.setName(paramNames[i++]);
+                }
+            }
+            
+            methodInfo.func = func;
+            #ifdef DEBUG
+            std::cout << "  Created prototype for: " << methodInfo.name << std::endl;
+            #endif
+        }
+    }
+    
+    getSymbolTable().exitClass();
+}
+
+/**
+ * 第二阶段：生成方法函数体
+ * 此时类已注册，所有依赖都已就绪
+ */
+void CodeGenerator::generate_method_bodies(ClassLayout& classLayout)
+{
+    #ifdef DEBUG
+    std::cout << "generate_method_bodies for: " << classLayout.name << std::endl;
+    #endif
+    
+    getSymbolTable().enterClass(classLayout.name);
+    
+    for (auto& methodInfo : classLayout.methods) {
+        if (methodInfo.method && methodInfo.func) {
+            // 跳过已经实现的函数（如内置方法）
+            if (!methodInfo.func->empty()) {
+                continue;
+            }
+            
+            // 跳过内置方法（通过检查函数体是否为空）
+            llvm::Function* builtin_func = getMethod(classLayout.name, methodInfo.name, METHOD_VIRTUAL);
+            if (builtin_func == methodInfo.func) {
+                continue;
+            }
+            
+            // 生成完整的函数体
+            method_class* method = methodInfo.method;
+            llvm::Function* func = methodInfo.func;
+            
+            // 创建函数体入口
+            llvm::BasicBlock* entryBlock = llvm::BasicBlock::Create(
+                _context.getLLVMContext(),
+                "entry",
+                func
+            );
+            getIRBuilder().SetInsertPoint(entryBlock);
+            
+            // 进入方法作用域
+            getSymbolTable().enterScope();
+            
+            // 设置参数
+            size_t i = 0;
+            std::vector<std::string> paramNames = emit_formals(method->formals).first;
+            for (auto& arg : func->args()) {
+                // 创建alloca指令分配空间
+                llvm::AllocaInst* alloca = getIRBuilder().CreateAlloca(
+                    arg.getType(),
+                    nullptr,
+                    arg.getName() + ".addr"
+                );
+                // 存储参数值到分配的空间
+                getIRBuilder().CreateStore(&arg, alloca);
+                
+                std::string paramType = "Object"; // 默认类型，实际应该从方法参数获取
+                if (i > 0 && method->formals) {
+                    int idx = i - 1;
+                    for (int j = method->formals->first(); method->formals->more(j); j = method->formals->next(j)) {
+                        if (idx == 0) {
+                            formal_class* formal = dynamic_cast<formal_class*>(method->formals->nth(j));
+                            if (formal) {
+                                paramType = formal->type_decl->get_string();
+                            }
+                            break;
+                        }
+                        idx--;
+                    }
+                }
+                
+                getSymbolTable().currentScope()->addVariable(
+                    paramNames[i], 
+                    VariableInfo::createParam(alloca, classLayout.name, paramType)
+                );
+                i++;
+            }
+            
+            // 生成方法体
+            llvm::Value* result = nullptr;
+            if (method->expr != nullptr) {
+                result = emit_expression(method->expr);
+            }
+            
+            // 创建返回指令
+            llvm::Type* returnType = func->getReturnType();
+            if (returnType->isVoidTy()) {
+                getIRBuilder().CreateRetVoid();
+            } else {
+                if (result == nullptr) {
+                    // 默认返回值
+                    result = llvm::Constant::getNullValue(returnType);
+                }
+                if (result->getType() != returnType) {
+                    result = getIRBuilder().CreateBitCast(result, returnType, "result");
+                }
+                getIRBuilder().CreateRet(result);
+            }
+            
+            // 退出方法作用域
+            getSymbolTable().exitScope();
+            
+            #ifdef DEBUG
+            std::cout << "  Generated body for: " << methodInfo.name << std::endl;
+            #endif
+        }
+    }
+    
+    getSymbolTable().exitClass();
 }
 
 /**
@@ -1208,6 +1459,7 @@ void CodeGenerator::build_vtable(ClassLayout& classLayout)
                           << " at position " << i << std::endl;
                 #endif
                 
+                // 此时 methodInfo.func 已经通过 generate_method_prototypes 设置
                 allVirtualMethods[i].func = methodInfo.func;
                 allVirtualMethods[i].method = methodInfo.method;
                 found = true;
@@ -1256,9 +1508,21 @@ void CodeGenerator::build_vtable(ClassLayout& classLayout)
                 llvm::Type::getInt8PtrTy(_context.getLLVMContext())
             );
         } else {
-            // 如果没有实现，暂时用null，实际应该用Object_abort作为默认
-            funcPtr = llvm::Constant::getNullValue(
-                llvm::Type::getInt8PtrTy(_context.getLLVMContext()));
+            // 如果函数指针为空，尝试通过名字查找
+            std::string funcName = classLayout.name + "." + methodInfo.name;
+            llvm::Function* foundFunc = getModule().getFunction(funcName);
+            if (foundFunc) {
+                funcPtr = llvm::ConstantExpr::getBitCast(
+                    foundFunc,
+                    llvm::Type::getInt8PtrTy(_context.getLLVMContext())
+                );
+                // 更新methodInfo
+                const_cast<ClassLayout::ClassMethodInfo&>(methodInfo).func = foundFunc;
+            } else {
+                // 使用null
+                funcPtr = llvm::Constant::getNullValue(
+                    llvm::Type::getInt8PtrTy(_context.getLLVMContext()));
+            }
         }
         
         vtableEntries.push_back(funcPtr);
@@ -1290,12 +1554,6 @@ void CodeGenerator::build_vtable(ClassLayout& classLayout)
     std::cout << "build_vtable done for " << classLayout.name 
               << ", entries: " << vtableEntries.size() 
               << " (2 ABI + " << classLayout.methods.size() << " methods)" << std::endl;
-    std::cout << "Virtual methods for " << classLayout.name << ":" << std::endl;
-    for (size_t i = 0; i < classLayout.methods.size(); ++i) {
-        const auto& method = classLayout.methods[i];
-        std::cout << "  [" << i << "] vtableIndex=" << method.vtableIndex 
-                  << " name=" << method.name << std::endl;
-    }
     #endif
 }
 
@@ -1749,34 +2007,59 @@ llvm::Value *CodeGenerator::emit_feature(Feature feature)
     return nullptr;
 }
 
-FormalParams CodeGenerator::emit_formals(Formals formals)
+FormalParams CodeGenerator::emit_formals(Formals formals, bool usePlaceholderThis)
 {
     #ifdef DEBUG
     std::cout << "emit_formals" << std::endl;
     #endif
+    
     std::vector<std::string> paramNames;
     std::vector<std::string> paramTypeNames;
 
-    paramNames.push_back("this");
-    paramTypeNames.push_back(getSymbolTable().getCurrentClassName());
-    
-    if (formals == nullptr) {
-        return {paramNames, paramTypeNames};
+    if (usePlaceholderThis) {
+        paramNames.push_back("this");
+        paramTypeNames.push_back("_PLACEHOLDER_");
+        #ifdef DEBUG
+        std::cout << "  Using placeholder for this" << std::endl;
+        #endif
+    } else {
+        paramNames.push_back("this");
+        std::string currentClass = getSymbolTable().getCurrentClassName();
+        paramTypeNames.push_back(currentClass);
+        #ifdef DEBUG
+        std::cout << "  Using real type for this: " << currentClass << std::endl;
+        #endif
     }
     
-
+    if (formals == nullptr) {
+        #ifdef DEBUG
+        std::cout << "  No formals" << std::endl;
+        #endif
+        return {paramNames, paramTypeNames};
+    }
+    #ifdef DEBUG
+    std::cout << "  Processing formals..." << std::endl;
+    #endif
     for (int i = formals->first(); formals->more(i); i = formals->next(i)) {
-        
+        #ifdef DEBUG
+        std::cout << "    Formal index: " << i << std::endl;
+        #endif
         formal_class* formal = dynamic_cast<formal_class*>(formals->nth(i));
-        if (!formal) continue;
+        if (!formal) {
+            #ifdef DEBUG
+            std::cout << "    Failed to cast to formal_class" << std::endl;
+            #endif
+            continue;
+        }
         
         std::string paramName = formal->name->get_string();
         std::string paramTypeName = formal->type_decl->get_string();
-
         paramNames.push_back(paramName);
         paramTypeNames.push_back(paramTypeName);
     }
-    
+    #ifdef DEBUG
+    std::cout << "  Total params: " << paramNames.size() << std::endl;
+    #endif
     return {paramNames, paramTypeNames};
 }
 
@@ -2486,7 +2769,9 @@ llvm::Value* CodeGenerator::emit_object_class(object_class* expression) {
 
     VariableInfo* varInfo = findVariable(getSymbolTable().getCurrentClassName(), expression->name->get_string());
     if (!varInfo || !varInfo->value) {
+        #ifdef DEBUG
         std::cout << "VariableInfo not found" << std::endl;
+        #endif
         return nullptr;
     }
     // std::cout << varInfo->typeName << std::endl;
