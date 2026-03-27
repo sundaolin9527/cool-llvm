@@ -362,3 +362,99 @@ void SymbolTableManager::dump() const {
     
     std::cout << "\n3. Current Scope Depth: " << scopeStack.size() << "\n";
 }
+
+// ==================== 类型映射相关方法 ====================
+void SymbolTableManager::registerCoolType(const std::string& coolType, llvm::Type* llvmType) {
+    if (llvmType == nullptr) {
+        return;
+    }
+    llvmToCool[llvmType] = coolType;
+}
+
+llvm::Type* SymbolTableManager::getLLVMTypeForCoolType(const std::string& coolType) const {
+    for (const auto& [llvmType, typeName] : llvmToCool) {
+        if (typeName == coolType) {
+            return llvmType;
+        }
+    }
+    return nullptr;
+}
+
+std::string SymbolTableManager::getCoolTypeForLLVMType(llvm::Type* llvmType) const {
+    if (llvmType == nullptr) {
+        return "";
+    }
+    
+    // 首先直接查找类型本身
+    auto it = llvmToCool.find(llvmType);
+    if (it != llvmToCool.end()) {
+        return it->second;
+    }
+    
+    // 如果是指针类型，查找其指向的类型
+    if (auto* ptrType = llvm::dyn_cast<llvm::PointerType>(llvmType)) {
+        llvm::Type* pointee = ptrType->getPointerElementType();
+        auto pointeeIt = llvmToCool.find(pointee);
+        if (pointeeIt != llvmToCool.end()) {
+            return pointeeIt->second;
+        }
+    }
+    
+    return "";
+}
+
+bool SymbolTableManager::hasCoolType(const std::string& coolType) const {
+    for (const auto& [llvmType, typeName] : llvmToCool) {
+        if (typeName == coolType) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool SymbolTableManager::hasLLVMType(llvm::Type* llvmType) const {
+    if (llvmType == nullptr) {
+        return false;
+    }
+    
+    // 检查类型本身
+    if (llvmToCool.find(llvmType) != llvmToCool.end()) {
+        return true;
+    }
+    
+    // 如果是指针类型，检查其指向的类型
+    if (auto* ptrType = llvm::dyn_cast<llvm::PointerType>(llvmType)) {
+        llvm::Type* pointee = ptrType->getPointerElementType();
+        if (llvmToCool.find(pointee) != llvmToCool.end()) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+std::vector<std::string> SymbolTableManager::getAllCoolTypes() const {
+    std::vector<std::string> types;
+    types.reserve(llvmToCool.size());
+    for (const auto& [llvmType, coolType] : llvmToCool) {
+        types.push_back(coolType);
+    }
+    return types;
+}
+
+void SymbolTableManager::removeCoolType(const std::string& coolType) {
+    for (auto it = llvmToCool.begin(); it != llvmToCool.end(); ++it) {
+        if (it->second == coolType) {
+            llvmToCool.erase(it);
+            break;
+        }
+    }
+}
+
+void SymbolTableManager::removeLLVMType(llvm::Type* llvmType) {
+    llvmToCool.erase(llvmType);
+}
+
+void SymbolTableManager::clearTypeMapping() {
+    llvmToCool.clear();
+}

@@ -166,6 +166,10 @@ public:
     
     // 字符串池
     std::unordered_map<std::string, llvm::Value*> string_pool;
+
+    // LLVM 类型 -> Cool 类型名
+    std::unordered_map<llvm::Type*, std::string> llvmToCool;
+
 public:
     // 构造函数
     SymbolTableManager() = default;
@@ -234,6 +238,17 @@ public:
 
     // 调试
     void dump() const;
+
+    // ========== 类型映射相关方法 ==========
+    void registerCoolType(const std::string& coolType, llvm::Type* llvmType);
+    llvm::Type* getLLVMTypeForCoolType(const std::string& coolType) const;
+    std::string getCoolTypeForLLVMType(llvm::Type* llvmType) const;
+    bool hasCoolType(const std::string& coolType) const;
+    bool hasLLVMType(llvm::Type* llvmType) const;
+    std::vector<std::string> getAllCoolTypes() const;
+    void removeCoolType(const std::string& coolType);
+    void removeLLVMType(llvm::Type* llvmType);
+    void clearTypeMapping();
 };
 
 #endif

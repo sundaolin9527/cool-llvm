@@ -5,69 +5,59 @@
 #include "cgen-context.h"
 
 llvm::Type* CodeGenerator::mapCoolTypeToLLVM(const std::string& typeName) {
-    #ifdef DEBUG
-    std::cout << "    mapCoolTypeToLLVM: " << typeName << std::endl;
-    #endif
-    if (typeName == "Int") {
-        #ifdef DEBUG
-        std::cout << "      -> i32" << std::endl;
-        #endif
-        return llvm::Type::getInt32Ty(_context.getLLVMContext());
-    } else if (typeName == "Bool") {
-        #ifdef DEBUG
-        std::cout << "      -> i1" << std::endl;
-        #endif
-        return llvm::Type::getInt1Ty(_context.getLLVMContext());
-    } else if (typeName == "String") {
-        #ifdef DEBUG
-        std::cout << "      -> i8*" << std::endl;
-        #endif
-        return llvm::Type::getInt8PtrTy(_context.getLLVMContext());
-    } else if (typeName == "SELF_TYPE") {
-        llvm::StructType* currentClassType = _symbolTable.getCurrentClassType();
-        if (currentClassType) {
-            #ifdef DEBUG
-            std::cout << "      -> self type pointer" << std::endl;
-            #endif
-            return currentClassType->getPointerTo();
-        } else {
-            #ifdef DEBUG
-            std::cout << "      -> self type is null, using i8*" << std::endl;
-            #endif
-            return llvm::PointerType::get(llvm::Type::getInt8Ty(_context.getLLVMContext()), 0);
-        }
-    } else if (typeName == "_PLACEHOLDER_") {
-        #ifdef DEBUG
-        std::cout << "      -> placeholder i8*" << std::endl;
-        #endif
+    // 占位符类型直接返回，不缓存
+    if (typeName == "_PLACEHOLDER_") {
         return llvm::PointerType::get(llvm::Type::getInt8Ty(_context.getLLVMContext()), 0);
-    } else if (typeName == "Object") {
-        #ifdef DEBUG
-        std::cout << "      -> Object pointer" << std::endl;
-        #endif
-        return llvm::Type::getInt8PtrTy(_context.getLLVMContext())->getPointerTo();
-    } else if (typeName == "IO") {
-        #ifdef DEBUG
-        std::cout << "      -> IO pointer" << std::endl;
-        #endif
-        return llvm::Type::getInt8PtrTy(_context.getLLVMContext())->getPointerTo();
     }
     
-    // 尝试查找已定义的结构体类型
-    #ifdef DEBUG
-    std::cout << "      Trying to find struct: " << typeName << std::endl;
-    #endif
-    llvm::StructType* existingType = llvm::StructType::getTypeByName(_context.getLLVMContext(), typeName);
-    if (existingType) {
-        #ifdef DEBUG
-        std::cout << "      Found existing struct" << std::endl;
-        #endif
-        return llvm::PointerType::get(existingType, 0);
+    // 1. 首先从符号表缓存中查找
+    llvm::Type* cachedType = getSymbolTable().getLLVMTypeForCoolType(typeName);
+    if (cachedType) {
+        return cachedType;
     }
-    #ifdef DEBUG
-    std::cout << "      Using default i8*" << std::endl;
-    #endif
-    return llvm::Type::getInt8PtrTy(_context.getLLVMContext())->getPointerTo();
+    
+    llvm::Type* resultType = nullptr;
+    llvm::LLVMContext& ctx = _context.getLLVMContext();
+    
+    // 2. 处理基本类型和特殊类型
+    if (typeName == "Int") {
+        resultType = llvm::Type::getInt32Ty(ctx);
+    } 
+    else if (typeName == "Bool") {
+        resultType = llvm::Type::getInt1Ty(ctx);
+    } 
+    else if (typeName == "String") {
+        resultType = llvm::Type::getInt8PtrTy(ctx);
+    } 
+    else if (typeName == "SELF_TYPE") {
+        llvm::StructType* currentClassType = getSymbolTable().getCurrentClassType();
+        if (currentClassType) {
+            resultType = currentClassType->getPointerTo();
+        } else {
+            resultType = llvm::PointerType::get(llvm::Type::getInt8Ty(ctx), 0);
+        }
+    } 
+    else if (typeName == "Object" || typeName == "IO") {
+        resultType = llvm::Type::getInt8PtrTy(ctx)->getPointerTo();
+    }
+    else {
+        // 3. 尝试查找已定义的结构体类型（类类型）
+        std::string structName = "class." + typeName;
+        llvm::StructType* structType = llvm::StructType::getTypeByName(ctx, structName);
+        if (structType) {
+            resultType = llvm::PointerType::get(structType, 0);
+        } else {
+            // 4. 默认返回 i8**
+            resultType = llvm::Type::getInt8PtrTy(ctx)->getPointerTo();
+        }
+    }
+    
+    // 5. 将结果注册到符号表缓存
+    if (typeName != "SELF_TYPE") {
+        getSymbolTable().registerCoolType(typeName, resultType);
+    }
+    
+    return resultType;
 }
 
 // ==================== 构造函数 ====================
@@ -2380,7 +2370,7 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
     std::string method_name = expression->name->get_string();
     
     // 4. 从对象类型中获取类名
-    std::string class_name = get_class_name_from_obj(obj_ptr);
+    std::string class_name = getSymbolTable().getCoolTypeForLLVMType(obj_ptr->getType());
     
     // 5. 在类层次结构中查找方法信息（包括父类）
     int method_index = -1;
@@ -2461,12 +2451,6 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
     );
     
     return result;
-}
-
-// (todo*)
-std::string CodeGenerator::get_class_name_from_obj(llvm::Value *obj)
-{
-    return getSymbolTable().getCurrentClassName();
 }
 
 llvm::Value *CodeGenerator::emit_cond_class(cond_class* expression)
