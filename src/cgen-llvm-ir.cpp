@@ -1349,62 +1349,290 @@ std::string CodeGenerator::findFirstField(ClassLayout* classLayout)
 /**
  * 创建类型信息结构
  */
-llvm::Constant* CodeGenerator::createTypeInfo(const std::string& className, uint32_t classTag)
+llvm::Constant* CodeGenerator::createTypeInfo(ClassLayout& classLayout)
 {
     llvm::LLVMContext& ctx = _context.getLLVMContext();
+    llvm::Module* module = &getModule();
+    std::string& className = classLayout.name;
+
+    #ifdef DEBUG
+    std::cout << "\n=== createTypeInfo called ===" << std::endl;
+    std::cout << "  className: " << className << std::endl;
+    #endif
     
     // C++名字修饰：_ZTI + 类名长度 + 类名
     std::string typeinfoName = "_ZTI" + std::to_string(className.length()) + className;
     
+    #ifdef DEBUG
+    std::cout << "  typeinfoName: " << typeinfoName << std::endl;
+    #endif
+    
     // 检查是否已存在
-    llvm::GlobalVariable* existing = getModule().getGlobalVariable(typeinfoName);
+    llvm::GlobalVariable* existing = module->getGlobalVariable(typeinfoName);
     if (existing) {
+        #ifdef DEBUG
+        std::cout << "  TypeInfo already exists, returning existing" << std::endl;
+        #endif
         return llvm::ConstantExpr::getBitCast(
             existing,
             llvm::Type::getInt8PtrTy(ctx)
         );
     }
     
-    // 创建类型名称字符串
-    llvm::Constant* classNameStr = llvm::ConstantDataArray::getString(ctx, className);
+    #ifdef DEBUG
+    std::cout << "  Creating new TypeInfo..." << std::endl;
+    #endif
     
-    llvm::GlobalVariable* strVar = new llvm::GlobalVariable(
-        getModule(),
+    // 创建类型名称字符串（使用C++修饰格式：长度+类名）
+    std::string mangledClassName = std::to_string(className.length()) + className;
+    
+    #ifdef DEBUG
+    std::cout << "  mangledClassName: " << mangledClassName << std::endl;
+    #endif
+    
+    llvm::Constant* classNameStr = llvm::ConstantDataArray::getString(ctx, mangledClassName, true);
+    
+    std::string typeNameVarName = "_ZTS" + mangledClassName;
+    llvm::GlobalVariable* typeNameVar = new llvm::GlobalVariable(
+        *module,
         classNameStr->getType(),
         true,  // constant
-        llvm::GlobalValue::PrivateLinkage,
-        classNameStr,
-        ".str." + className
-    );
-    
-    // 简化的typeinfo结构 - 只包含类型名称
-    llvm::StructType* typeinfoType = llvm::StructType::create(
-        ctx,
-        {llvm::Type::getInt8PtrTy(ctx)},  // 只包含类型名称指针
-        "struct.__cxxabiv1.__class_type_info"
-    );
-    
-    std::vector<llvm::Constant*> typeinfoVals;
-    typeinfoVals.push_back(llvm::ConstantExpr::getBitCast(
-        strVar, llvm::Type::getInt8PtrTy(ctx)));
-    
-    llvm::Constant* typeinfoInit = llvm::ConstantStruct::get(typeinfoType, typeinfoVals);
-    
-    llvm::GlobalVariable* typeinfo = new llvm::GlobalVariable(
-        getModule(),
-        typeinfoType,
-        true,  // constant
         llvm::GlobalValue::LinkOnceODRLinkage,
-        typeinfoInit,
-        typeinfoName
+        classNameStr,
+        typeNameVarName
     );
+    typeNameVar->setAlignment(llvm::Align(1));
     
-    typeinfo->setAlignment(llvm::Align(8));
+    #ifdef DEBUG
+    std::cout << "  Created type name variable: " << typeNameVarName << std::endl;
+    #endif
     
-    return llvm::ConstantExpr::getBitCast(
-        typeinfo,
-        llvm::Type::getInt8PtrTy(ctx)
-    );
+    // C++ ABI 中预定义的 vtable 符号名
+    const std::string CLASS_TYPE_INFO_VTABLE = "_ZTVN10__cxxabiv117__class_type_infoE";
+    const std::string SI_CLASS_TYPE_INFO_VTABLE = "_ZTVN10__cxxabiv120__si_class_type_infoE";
+    
+    #ifdef DEBUG
+    std::cout << "  Looking up vtable symbols..." << std::endl;
+    #endif
+    
+    // 获取或声明 __class_type_info 的 vtable
+    llvm::Type* vtableElemType = llvm::Type::getInt8PtrTy(ctx);
+    llvm::ArrayType* vtableArrayType = llvm::ArrayType::get(vtableElemType, 0);
+    
+    llvm::GlobalVariable* classTypeInfoVtable = module->getGlobalVariable(CLASS_TYPE_INFO_VTABLE);
+    if (!classTypeInfoVtable) {
+        #ifdef DEBUG
+        std::cout << "    Creating external declaration for " << CLASS_TYPE_INFO_VTABLE << std::endl;
+        #endif
+        classTypeInfoVtable = new llvm::GlobalVariable(
+            *module,
+            vtableArrayType,
+            false,
+            llvm::GlobalValue::ExternalLinkage,
+            nullptr,
+            CLASS_TYPE_INFO_VTABLE
+        );
+    }
+    
+    // 获取或声明 __si_class_type_info 的 vtable
+    llvm::GlobalVariable* siClassTypeInfoVtable = module->getGlobalVariable(SI_CLASS_TYPE_INFO_VTABLE);
+    if (!siClassTypeInfoVtable) {
+        #ifdef DEBUG
+        std::cout << "    Creating external declaration for " << SI_CLASS_TYPE_INFO_VTABLE << std::endl;
+        #endif
+        siClassTypeInfoVtable = new llvm::GlobalVariable(
+            *module,
+            vtableArrayType,
+            false,
+            llvm::GlobalValue::ExternalLinkage,
+            nullptr,
+            SI_CLASS_TYPE_INFO_VTABLE
+        );
+    }
+    
+    // 判断是否有基类
+    bool hasParent = !classLayout.parentName.empty();
+    #ifdef DEBUG
+    std::cout << "  Class info:" << std::endl;
+    std::cout << "    parentName: '" << classLayout.parentName << "'" << std::endl;
+    std::cout << "    hasParent: " << (hasParent ? "true" : "false") << std::endl;
+    #endif
+    
+    llvm::Constant* typeinfoPtr = nullptr;
+    
+    // 获取或创建结构体类型
+    llvm::StructType* classTypeInfoType = nullptr;
+    llvm::StructType* siClassTypeInfoType = nullptr;
+    
+    if (!hasParent) {
+        classTypeInfoType = llvm::StructType::getTypeByName(ctx, "struct.__cxxabiv1.__class_type_info");
+        if (!classTypeInfoType) {
+            classTypeInfoType = llvm::StructType::create(
+                ctx,
+                {
+                    llvm::Type::getInt8PtrTy(ctx),  // vptr
+                    llvm::Type::getInt8PtrTy(ctx)   // name
+                },
+                "struct.__cxxabiv1.__class_type_info"
+            );
+        }
+    } else {
+        siClassTypeInfoType = llvm::StructType::getTypeByName(ctx, "struct.__cxxabiv1.__si_class_type_info");
+        if (!siClassTypeInfoType) {
+            siClassTypeInfoType = llvm::StructType::create(
+                ctx,
+                {
+                    llvm::Type::getInt8PtrTy(ctx),  // vptr
+                    llvm::Type::getInt8PtrTy(ctx),  // name
+                    llvm::Type::getInt8PtrTy(ctx)   // base_type
+                },
+                "struct.__cxxabiv1.__si_class_type_info"
+            );
+        }
+    }
+    
+    if (!hasParent) {
+        #ifdef DEBUG
+        std::cout << "  Creating __class_type_info (no base class)" << std::endl;
+        #endif
+        
+        // 方法1：使用更简单的方式创建 vptr
+        // 直接获取 vtable 的地址，然后加上 2 个指针的偏移
+        llvm::Constant* vtableAddr = classTypeInfoVtable;
+        
+        // 创建 GEP: vtable + 2
+        // 使用 i8* 进行指针算术更安全
+        llvm::Constant* offset = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), 2);
+        llvm::Constant* vptr = llvm::ConstantExpr::getGetElementPtr(
+            llvm::Type::getInt8PtrTy(ctx),  // 使用 ptr 类型
+            vtableAddr,
+            offset,
+            true
+        );
+        
+        #ifdef DEBUG
+        std::cout << "    vptr created" << std::endl;
+        #endif
+        
+        // 创建 typeinfo 实例
+        std::vector<llvm::Constant*> typeinfoVals;
+        typeinfoVals.push_back(vptr);
+        typeinfoVals.push_back(llvm::ConstantExpr::getBitCast(typeNameVar, llvm::Type::getInt8PtrTy(ctx)));
+        
+        llvm::Constant* typeinfoInit = llvm::ConstantStruct::get(classTypeInfoType, typeinfoVals);
+        
+        llvm::GlobalVariable* typeinfo = new llvm::GlobalVariable(
+            *module,
+            classTypeInfoType,
+            true,
+            llvm::GlobalValue::LinkOnceODRLinkage,
+            typeinfoInit,
+            typeinfoName
+        );
+        typeinfo->setAlignment(llvm::Align(8));
+        
+        typeinfoPtr = llvm::ConstantExpr::getBitCast(
+            typeinfo,
+            llvm::Type::getInt8PtrTy(ctx)
+        );
+        
+        #ifdef DEBUG
+        std::cout << "    Created __class_type_info for " << className << std::endl;
+        #endif
+        
+    } else {
+        #ifdef DEBUG
+        std::cout << "  Creating __si_class_type_info (with base class: " << classLayout.parentName << ")" << std::endl;
+        #endif
+        
+        // 获取基类的 RTTI 指针
+        std::string baseTypeinfoName = "_ZTI" + std::to_string(classLayout.parentName.length()) + classLayout.parentName;
+        
+        #ifdef DEBUG
+        std::cout << "    baseTypeinfoName: " << baseTypeinfoName << std::endl;
+        #endif
+        
+        llvm::GlobalVariable* baseTypeinfo = module->getGlobalVariable(baseTypeinfoName);
+        
+        if (!baseTypeinfo) {
+            #ifdef DEBUG
+            std::cout << "    Base typeinfo not found, recursively creating for: " << classLayout.parentName << std::endl;
+            #endif
+            SymbolTableManager& symbol_table = getSymbolTable();
+            ClassLayout* parentLayout = symbol_table.findClass(classLayout.parentName);
+            if (parentLayout) {
+                createTypeInfo(*parentLayout);
+                baseTypeinfo = module->getGlobalVariable(baseTypeinfoName);
+            }
+            
+            #ifdef DEBUG
+            if (baseTypeinfo) {
+                std::cout << "    Base typeinfo created successfully" << std::endl;
+            } else {
+                std::cout << "    ERROR: Failed to create base typeinfo for: " << classLayout.parentName << std::endl;
+            }
+            #endif
+        }
+        
+        if (!baseTypeinfo) {
+            #ifdef DEBUG
+            std::cout << "    ERROR: baseTypeinfo is null, using null pointer" << std::endl;
+            #endif
+            return llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(ctx));
+        }
+        
+        llvm::Constant* baseTypeinfoPtr = llvm::ConstantExpr::getBitCast(
+            baseTypeinfo,
+            llvm::Type::getInt8PtrTy(ctx)
+        );
+        
+        // 创建 vptr
+        llvm::Constant* vtableAddr = siClassTypeInfoVtable;
+        llvm::Constant* offset = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), 2);
+        llvm::Constant* vptr = llvm::ConstantExpr::getGetElementPtr(
+            llvm::Type::getInt8PtrTy(ctx),
+            vtableAddr,
+            offset,
+            true
+        );
+        
+        #ifdef DEBUG
+        std::cout << "    vptr created" << std::endl;
+        #endif
+        
+        // 创建 typeinfo 实例
+        std::vector<llvm::Constant*> typeinfoVals;
+        typeinfoVals.push_back(vptr);
+        typeinfoVals.push_back(llvm::ConstantExpr::getBitCast(typeNameVar, llvm::Type::getInt8PtrTy(ctx)));
+        typeinfoVals.push_back(baseTypeinfoPtr);
+        
+        llvm::Constant* typeinfoInit = llvm::ConstantStruct::get(siClassTypeInfoType, typeinfoVals);
+        
+        llvm::GlobalVariable* typeinfo = new llvm::GlobalVariable(
+            *module,
+            siClassTypeInfoType,
+            true,
+            llvm::GlobalValue::LinkOnceODRLinkage,
+            typeinfoInit,
+            typeinfoName
+        );
+        typeinfo->setAlignment(llvm::Align(8));
+        
+        typeinfoPtr = llvm::ConstantExpr::getBitCast(
+            typeinfo,
+            llvm::Type::getInt8PtrTy(ctx)
+        );
+        
+        #ifdef DEBUG
+        std::cout << "    Created __si_class_type_info for " << className << std::endl;
+        #endif
+    }
+    
+    #ifdef DEBUG
+    std::cout << "=== createTypeInfo finished for: " << className << " ===\n" << std::endl;
+    #endif
+    
+    return typeinfoPtr;
 }
 
 /**
@@ -1417,7 +1645,7 @@ llvm::Constant* CodeGenerator::createTypeInfo(const std::string& className, uint
 void CodeGenerator::build_vtable(ClassLayout& classLayout)
 {
     #ifdef DEBUG
-    std::cout << "build_vtable: " << classLayout.name << std::endl;
+    std::cout << "\n=== build_vtable: " << classLayout.name << " ===" << std::endl;
     #endif
     
     //=== 步骤1：收集所有虚函数（包括继承的）====================
@@ -1426,40 +1654,53 @@ void CodeGenerator::build_vtable(ClassLayout& classLayout)
     
     // 1.1 先收集基类的所有虚函数（保持基类中的顺序）
     if (!classLayout.parentName.empty()) {
+        #ifdef DEBUG
+        std::cout << "  Parent class: " << classLayout.parentName << std::endl;
+        #endif
+        
         ClassLayout* parentLayout = symbol_table.findClass(classLayout.parentName);
         if (parentLayout) {
             // 确保父类的虚表已经构建
             if (!parentLayout->vtable) {
+                #ifdef DEBUG
+                std::cout << "  Building parent vtable first..." << std::endl;
+                #endif
                 build_vtable(*parentLayout);
             }
             
             // 从父类复制所有虚方法，保持原有顺序
+            #ifdef DEBUG
+            std::cout << "  Inheriting " << parentLayout->methods.size() << " methods from parent" << std::endl;
+            #endif
+            
             for (const auto& parentMethod : parentLayout->methods) {
-                // 所有方法都是虚方法（在COOL中）
                 allVirtualMethods.push_back(parentMethod);
                 
                 #ifdef DEBUG
-                std::cout << "  Inherited method: " << parentMethod.name 
-                          << " from " << classLayout.parentName << std::endl;
+                std::cout << "    Inherited: " << parentMethod.name << std::endl;
                 #endif
             }
+        } else {
+            #ifdef DEBUG
+            std::cout << "  ERROR: Parent class not found: " << classLayout.parentName << std::endl;
+            #endif
         }
     }
     
     // 1.2 处理当前类的方法（按声明顺序）
+    #ifdef DEBUG
+    std::cout << "  Processing " << classLayout.methods.size() << " methods for current class" << std::endl;
+    #endif
+    
     for (auto& methodInfo : classLayout.methods) {
         bool found = false;
         
         // 检查是否覆盖基类方法
         for (size_t i = 0; i < allVirtualMethods.size(); i++) {
             if (allVirtualMethods[i].name == methodInfo.name) {
-                // 覆盖基类方法：替换函数指针，但保持位置不变
                 #ifdef DEBUG
-                std::cout << "  Overriding method: " << methodInfo.name 
-                          << " at position " << i << std::endl;
+                std::cout << "    Overriding: " << methodInfo.name << " at index " << i << std::endl;
                 #endif
-                
-                // 此时 methodInfo.func 已经通过 generate_method_prototypes 设置
                 allVirtualMethods[i].func = methodInfo.func;
                 allVirtualMethods[i].method = methodInfo.method;
                 found = true;
@@ -1470,35 +1711,41 @@ void CodeGenerator::build_vtable(ClassLayout& classLayout)
         // 如果是新方法，添加到末尾
         if (!found) {
             #ifdef DEBUG
-            std::cout << "  New method: " << methodInfo.name << std::endl;
+            std::cout << "    New method: " << methodInfo.name << std::endl;
             #endif
             allVirtualMethods.push_back(methodInfo);
         }
     }
     
-    // 1.3 为每个方法设置vtableIndex（基于它们在列表中的位置）
+    // 1.3 为每个方法设置vtableIndex
     for (size_t i = 0; i < allVirtualMethods.size(); ++i) {
-        // 虚函数在虚表中的实际索引 = i + 2 (跳过ABI条目)
         allVirtualMethods[i].vtableIndex = i + 2;
     }
     
-    // 更新classLayout的methods为完整的虚函数列表
+    // 更新classLayout的methods
     classLayout.methods = allVirtualMethods;
+    
+    #ifdef DEBUG
+    std::cout << "  Total virtual methods: " << allVirtualMethods.size() << std::endl;
+    #endif
     
     //=== 步骤2：构建虚表条目 ====================================
     std::vector<llvm::Constant*> vtableEntries;
     
-    // 2.1 offset_to_top（单继承始终为0）
+    // 2.1 offset_to_top
     llvm::Constant* offsetToTop = llvm::ConstantInt::get(
         llvm::Type::getInt64Ty(_context.getLLVMContext()), 0);
     vtableEntries.push_back(llvm::ConstantExpr::getIntToPtr(
         offsetToTop, llvm::Type::getInt8PtrTy(_context.getLLVMContext())));
     
     // 2.2 typeinfo指针（RTTI）
-    llvm::Constant* typeinfoPtr = createTypeInfo(classLayout.name, classLayout.classTag);
+    #ifdef DEBUG
+    std::cout << "  Creating typeinfo for: " << classLayout.name << std::endl;
+    #endif
+    llvm::Constant* typeinfoPtr = createTypeInfo(classLayout);
     vtableEntries.push_back(typeinfoPtr);
     
-    // 2.3 添加所有虚函数指针（按allVirtualMethods的顺序）
+    // 2.3 添加所有虚函数指针
     for (const auto& methodInfo : classLayout.methods) {
         llvm::Constant* funcPtr = nullptr;
         
@@ -1507,6 +1754,9 @@ void CodeGenerator::build_vtable(ClassLayout& classLayout)
                 methodInfo.func,
                 llvm::Type::getInt8PtrTy(_context.getLLVMContext())
             );
+            #ifdef DEBUG
+            std::cout << "  Adding method: " << methodInfo.name << " (func exists)" << std::endl;
+            #endif
         } else {
             // 如果函数指针为空，尝试通过名字查找
             std::string funcName = classLayout.name + "." + methodInfo.name;
@@ -1516,12 +1766,16 @@ void CodeGenerator::build_vtable(ClassLayout& classLayout)
                     foundFunc,
                     llvm::Type::getInt8PtrTy(_context.getLLVMContext())
                 );
-                // 更新methodInfo
                 const_cast<ClassLayout::ClassMethodInfo&>(methodInfo).func = foundFunc;
+                #ifdef DEBUG
+                std::cout << "  Adding method: " << methodInfo.name << " (found by name)" << std::endl;
+                #endif
             } else {
-                // 使用null
                 funcPtr = llvm::Constant::getNullValue(
                     llvm::Type::getInt8PtrTy(_context.getLLVMContext()));
+                #ifdef DEBUG
+                std::cout << "  WARNING: Method " << methodInfo.name << " not found, using null" << std::endl;
+                #endif
             }
         }
         
@@ -1536,13 +1790,17 @@ void CodeGenerator::build_vtable(ClassLayout& classLayout)
     
     llvm::Constant* vtableInit = llvm::ConstantArray::get(vtableType, vtableEntries);
     
-    // C++名字修饰：_ZTV + 类名长度 + 类名
     std::string vtableName = "_ZTV" + std::to_string(classLayout.name.length()) + classLayout.name;
+    
+    #ifdef DEBUG
+    std::cout << "  Creating vtable: " << vtableName << std::endl;
+    std::cout << "  Vtable entries: " << vtableEntries.size() << " (2 ABI + " << classLayout.methods.size() << " methods)" << std::endl;
+    #endif
     
     classLayout.vtable = new llvm::GlobalVariable(
         getModule(),
         vtableType,
-        true,  // constant
+        true,
         llvm::GlobalValue::LinkOnceODRLinkage,
         vtableInit,
         vtableName
@@ -1551,9 +1809,7 @@ void CodeGenerator::build_vtable(ClassLayout& classLayout)
     classLayout.vtable->setAlignment(llvm::Align(8));
     
     #ifdef DEBUG
-    std::cout << "build_vtable done for " << classLayout.name 
-              << ", entries: " << vtableEntries.size() 
-              << " (2 ABI + " << classLayout.methods.size() << " methods)" << std::endl;
+    std::cout << "=== build_vtable done for " << classLayout.name << " ===\n" << std::endl;
     #endif
 }
 
@@ -2124,7 +2380,7 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
     std::string method_name = expression->name->get_string();
     
     // 4. 从对象类型中获取类名
-    std::string class_name = get_class_name_from_type(obj_ptr->getType());
+    std::string class_name = get_class_name_from_obj(obj_ptr);
     
     // 5. 在类层次结构中查找方法信息（包括父类）
     int method_index = -1;
@@ -2208,7 +2464,7 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
 }
 
 // (todo*)
-std::string CodeGenerator::get_class_name_from_type(llvm::Type *type)
+std::string CodeGenerator::get_class_name_from_obj(llvm::Value *obj)
 {
     return getSymbolTable().getCurrentClassName();
 }

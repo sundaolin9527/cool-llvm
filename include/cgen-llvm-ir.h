@@ -45,7 +45,7 @@ private:
     ClassLayout collect_class_info(class__class* _class);
     void build_memory_layout(ClassLayout& classLayout);
     size_t getFieldOffset(ClassLayout* classLayout, const std::string& fieldName);
-    llvm::Constant* createTypeInfo(const std::string& className, uint32_t classTag);
+    llvm::Constant* createTypeInfo(ClassLayout& classLayout);
     void build_vtable(ClassLayout& classLayout);
     std::string findFirstField(ClassLayout* classLayout);
     llvm::Value* generateMemberAccess(llvm::Value* objectPtr, const std::string& className, const std::string& memberName);
@@ -56,7 +56,7 @@ private:
     uint32_t allocate_class_tag();
     void default_initialize_object(llvm::Value* objPtr, ClassLayout& classLayout);
     llvm::Function* create_new_function(const std::string& className, ClassLayout& classLayout);
-    std::string get_class_name_from_type(llvm::Type *type);
+    std::string get_class_name_from_obj(llvm::Value *obj);
     void generate_method_prototypes(ClassLayout& classLayout);
     void generate_method_bodies(ClassLayout& classLayout);
     // ========== 运行时初始化 ==========
