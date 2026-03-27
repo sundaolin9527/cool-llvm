@@ -83,147 +83,122 @@ void RuntimeAPI::declareStandardLibraryFunctions() {
 }
 
 void RuntimeAPI::declareCoolBuiltinFunctions() {
-    // 首先获取或创建 COOL 类型
-    StructType* objectTy = StructType::getTypeByName(context, "Object");
+    llvm::LLVMContext& ctx = _module.getContext();
+    
+    // ========== 基本类型 ==========
+    llvm::Type* i32Ty = llvm::Type::getInt32Ty(ctx);
+    llvm::Type* i1Ty = llvm::Type::getInt1Ty(ctx);
+    llvm::Type* i8PtrTy = llvm::Type::getInt8PtrTy(ctx);
+    
+    // ========== 类类型（只有 Object、IO、以及用户定义的类）==========
+    llvm::StructType* objectTy = llvm::StructType::getTypeByName(ctx, "class.Object");
     if (!objectTy) {
-        // 创建占位符类型
-        objectTy = StructType::create(context, "Object");
+        objectTy = llvm::StructType::create(ctx, "class.Object");
     }
-    PointerType* objectPtrTy = PointerType::get(objectTy, 0);
+    llvm::PointerType* objectPtrTy = llvm::PointerType::get(objectTy, 0);
     
-    StructType* stringTy = StructType::getTypeByName(context, "String");
-    if (!stringTy) {
-        stringTy = StructType::create(context, "String");
-    }
-    PointerType* stringPtrTy = PointerType::get(stringTy, 0);
-    
-    StructType* intTy = StructType::getTypeByName(context, "Int");
-    if (!intTy) {
-        intTy = StructType::create(context, "Int");
-    }
-    PointerType* intPtrTy = PointerType::get(intTy, 0);
-    
-    StructType* boolTy = StructType::getTypeByName(context, "Bool");
-    if (!boolTy) {
-        boolTy = StructType::create(context, "Bool");
-    }
-    PointerType* boolPtrTy = PointerType::get(boolTy, 0);
-    
-    StructType* ioTy = StructType::getTypeByName(context, "IO");
+    llvm::StructType* ioTy = llvm::StructType::getTypeByName(ctx, "class.IO");
     if (!ioTy) {
-        ioTy = StructType::create(context, "IO");
+        ioTy = llvm::StructType::create(ctx, "class.IO");
     }
-    PointerType* ioPtrTy = PointerType::get(ioTy, 0);
+    llvm::PointerType* ioPtrTy = llvm::PointerType::get(ioTy, 0);
     
-    Type* i32Ty = Type::getInt32Ty(context);
+    // String 在 Cool 中是基本类型，用 i8* 表示
+    llvm::Type* stringTy = i8PtrTy;
     
     // ========== Object 类方法 ==========
-    
     // Object.copy() : Object
-    FunctionType* objectCopyTy = FunctionType::get(objectPtrTy, {objectPtrTy}, false);
-    coolFuncs.object_copy = Function::Create(objectCopyTy, Function::ExternalLinkage, "Object_copy", &_module);
+    llvm::FunctionType* objectCopyTy = llvm::FunctionType::get(objectPtrTy, {objectPtrTy}, false);
+    coolFuncs.object_copy = llvm::Function::Create(objectCopyTy, llvm::Function::ExternalLinkage, "Object_copy", &_module);
     
     // Object.abort() : Object
-    FunctionType* objectAbortTy = FunctionType::get(objectPtrTy, {objectPtrTy}, false);
-    coolFuncs.object_abort = Function::Create(objectAbortTy, Function::ExternalLinkage, "Object_abort", &_module);
+    llvm::FunctionType* objectAbortTy = llvm::FunctionType::get(objectPtrTy, {objectPtrTy}, false);
+    coolFuncs.object_abort = llvm::Function::Create(objectAbortTy, llvm::Function::ExternalLinkage, "Object_abort", &_module);
     
     // Object.type_name() : String
-    FunctionType* objectTypeNameTy = FunctionType::get(stringPtrTy, {objectPtrTy}, false);
-    coolFuncs.object_type_name = Function::Create(objectTypeNameTy, Function::ExternalLinkage, "Object_type_name", &_module);
+    llvm::FunctionType* objectTypeNameTy = llvm::FunctionType::get(stringTy, {objectPtrTy}, false);
+    coolFuncs.object_type_name = llvm::Function::Create(objectTypeNameTy, llvm::Function::ExternalLinkage, "Object_type_name", &_module);
     
     // ========== IO 类方法 ==========
-    
     // IO.out_string(String) : IO
-    FunctionType* ioOutStringTy = FunctionType::get(ioPtrTy, {ioPtrTy, stringPtrTy}, false);
-    coolFuncs.io_out_string = Function::Create(ioOutStringTy, Function::ExternalLinkage, "IO_out_string", &_module);
+    llvm::FunctionType* ioOutStringTy = llvm::FunctionType::get(ioPtrTy, {ioPtrTy, stringTy}, false);
+    coolFuncs.io_out_string = llvm::Function::Create(ioOutStringTy, llvm::Function::ExternalLinkage, "IO_out_string", &_module);
     
     // IO.out_int(Int) : IO
-    FunctionType* ioOutIntTy = FunctionType::get(ioPtrTy, {ioPtrTy, intPtrTy}, false);
-    coolFuncs.io_out_int = Function::Create(ioOutIntTy, Function::ExternalLinkage, "IO_out_int", &_module);
+    llvm::FunctionType* ioOutIntTy = llvm::FunctionType::get(ioPtrTy, {ioPtrTy, i32Ty}, false);
+    coolFuncs.io_out_int = llvm::Function::Create(ioOutIntTy, llvm::Function::ExternalLinkage, "IO_out_int", &_module);
     
     // IO.in_string() : String
-    FunctionType* ioInStringTy = FunctionType::get(stringPtrTy, {ioPtrTy}, false);
-    coolFuncs.io_in_string = Function::Create(ioInStringTy, Function::ExternalLinkage, "IO_in_string", &_module);
+    llvm::FunctionType* ioInStringTy = llvm::FunctionType::get(stringTy, {ioPtrTy}, false);
+    coolFuncs.io_in_string = llvm::Function::Create(ioInStringTy, llvm::Function::ExternalLinkage, "IO_in_string", &_module);
     
     // IO.in_int() : Int
-    FunctionType* ioInIntTy = FunctionType::get(intPtrTy, {ioPtrTy}, false);
-    coolFuncs.io_in_int = Function::Create(ioInIntTy, Function::ExternalLinkage, "IO_in_int", &_module);
+    llvm::FunctionType* ioInIntTy = llvm::FunctionType::get(i32Ty, {ioPtrTy}, false);
+    coolFuncs.io_in_int = llvm::Function::Create(ioInIntTy, llvm::Function::ExternalLinkage, "IO_in_int", &_module);
     
-    // ========== String 类方法 ==========
-    
+    // ========== String 基本类型方法 ==========
     // String.length() : Int
-    FunctionType* stringLengthTy = FunctionType::get(intPtrTy, {stringPtrTy}, false);
-    coolFuncs.string_length = Function::Create(stringLengthTy, Function::ExternalLinkage, "String_length", &_module);
+    llvm::FunctionType* stringLengthTy = llvm::FunctionType::get(i32Ty, {stringTy}, false);
+    coolFuncs.string_length = llvm::Function::Create(stringLengthTy, llvm::Function::ExternalLinkage, "String_length", &_module);
     
     // String.concat(String) : String
-    FunctionType* stringConcatTy = FunctionType::get(stringPtrTy, {stringPtrTy, stringPtrTy}, false);
-    coolFuncs.string_concat = Function::Create(stringConcatTy, Function::ExternalLinkage, "String_concat", &_module);
+    llvm::FunctionType* stringConcatTy = llvm::FunctionType::get(stringTy, {stringTy, stringTy}, false);
+    coolFuncs.string_concat = llvm::Function::Create(stringConcatTy, llvm::Function::ExternalLinkage, "String_concat", &_module);
     
     // String.substr(Int, Int) : String
-    FunctionType* stringSubstrTy = FunctionType::get(stringPtrTy, {stringPtrTy, intPtrTy, intPtrTy}, false);
-    coolFuncs.string_substr = Function::Create(stringSubstrTy, Function::ExternalLinkage, "String_substr", &_module);
+    llvm::FunctionType* stringSubstrTy = llvm::FunctionType::get(stringTy, {stringTy, i32Ty, i32Ty}, false);
+    coolFuncs.string_substr = llvm::Function::Create(stringSubstrTy, llvm::Function::ExternalLinkage, "String_substr", &_module);
     
-    // 字符串比较方法
-    FunctionType* stringEqualsTy = FunctionType::get(boolPtrTy, {stringPtrTy, stringPtrTy}, false);
-    coolFuncs.string_equals = Function::Create(stringEqualsTy, Function::ExternalLinkage, "String_equals", &_module);
+    // String.equals(String) : Bool
+    llvm::FunctionType* stringEqualsTy = llvm::FunctionType::get(i1Ty, {stringTy, stringTy}, false);
+    coolFuncs.string_equals = llvm::Function::Create(stringEqualsTy, llvm::Function::ExternalLinkage, "String_equals", &_module);
     
-    FunctionType* stringLessTy = FunctionType::get(boolPtrTy, {stringPtrTy, stringPtrTy}, false);
-    coolFuncs.string_less = Function::Create(stringLessTy, Function::ExternalLinkage, "String_less", &_module);
-    
-    // ========== Int 类方法 ==========
-    
+    // ========== Int 基本类型方法 ==========
     // Int.plus(Int) : Int
-    FunctionType* intPlusTy = FunctionType::get(intPtrTy, {intPtrTy, intPtrTy}, false);
-    coolFuncs.int_plus = Function::Create(intPlusTy, Function::ExternalLinkage, "Int_plus", &_module);
+    llvm::FunctionType* intPlusTy = llvm::FunctionType::get(i32Ty, {i32Ty, i32Ty}, false);
+    coolFuncs.int_plus = llvm::Function::Create(intPlusTy, llvm::Function::ExternalLinkage, "Int_plus", &_module);
     
     // Int.minus(Int) : Int
-    FunctionType* intMinusTy = FunctionType::get(intPtrTy, {intPtrTy, intPtrTy}, false);
-    coolFuncs.int_minus = Function::Create(intMinusTy, Function::ExternalLinkage, "Int_minus", &_module);
+    llvm::FunctionType* intMinusTy = llvm::FunctionType::get(i32Ty, {i32Ty, i32Ty}, false);
+    coolFuncs.int_minus = llvm::Function::Create(intMinusTy, llvm::Function::ExternalLinkage, "Int_minus", &_module);
     
     // Int.times(Int) : Int
-    FunctionType* intTimesTy = FunctionType::get(intPtrTy, {intPtrTy, intPtrTy}, false);
-    coolFuncs.int_times = Function::Create(intTimesTy, Function::ExternalLinkage, "Int_times", &_module);
+    llvm::FunctionType* intTimesTy = llvm::FunctionType::get(i32Ty, {i32Ty, i32Ty}, false);
+    coolFuncs.int_times = llvm::Function::Create(intTimesTy, llvm::Function::ExternalLinkage, "Int_times", &_module);
     
     // Int.divide(Int) : Int
-    FunctionType* intDivideTy = FunctionType::get(intPtrTy, {intPtrTy, intPtrTy}, false);
-    coolFuncs.int_divide = Function::Create(intDivideTy, Function::ExternalLinkage, "Int_divide", &_module);
+    llvm::FunctionType* intDivideTy = llvm::FunctionType::get(i32Ty, {i32Ty, i32Ty}, false);
+    coolFuncs.int_divide = llvm::Function::Create(intDivideTy, llvm::Function::ExternalLinkage, "Int_divide", &_module);
     
     // Int.negate() : Int
-    FunctionType* intNegateTy = FunctionType::get(intPtrTy, {intPtrTy}, false);
-    coolFuncs.int_negate = Function::Create(intNegateTy, Function::ExternalLinkage, "Int_negate", &_module);
+    llvm::FunctionType* intNegateTy = llvm::FunctionType::get(i32Ty, {i32Ty}, false);
+    coolFuncs.int_negate = llvm::Function::Create(intNegateTy, llvm::Function::ExternalLinkage, "Int_negate", &_module);
     
-    // Int比较方法
-    FunctionType* intEqualsTy = FunctionType::get(boolPtrTy, {intPtrTy, intPtrTy}, false);
-    coolFuncs.int_equals = Function::Create(intEqualsTy, Function::ExternalLinkage, "Int_equals", &_module);
+    // Int.equals(Int) : Bool
+    llvm::FunctionType* intEqualsTy = llvm::FunctionType::get(i1Ty, {i32Ty, i32Ty}, false);
+    coolFuncs.int_equals = llvm::Function::Create(intEqualsTy, llvm::Function::ExternalLinkage, "Int_equals", &_module);
     
-    FunctionType* intLessTy = FunctionType::get(boolPtrTy, {intPtrTy, intPtrTy}, false);
-    coolFuncs.int_less = Function::Create(intLessTy, Function::ExternalLinkage, "Int_less", &_module);
-    
-    // ========== Bool 类方法 ==========
-    
+    // ========== Bool 基本类型方法 ==========
     // Bool.not() : Bool
-    FunctionType* boolNotTy = FunctionType::get(boolPtrTy, {boolPtrTy}, false);
-    coolFuncs.bool_not = Function::Create(boolNotTy, Function::ExternalLinkage, "Bool_not", &_module);
+    llvm::FunctionType* boolNotTy = llvm::FunctionType::get(i1Ty, {i1Ty}, false);
+    coolFuncs.bool_not = llvm::Function::Create(boolNotTy, llvm::Function::ExternalLinkage, "Bool_not", &_module);
     
     // Bool.equals(Bool) : Bool
-    FunctionType* boolEqualsTy = FunctionType::get(boolPtrTy, {boolPtrTy, boolPtrTy}, false);
-    coolFuncs.bool_equals = Function::Create(boolEqualsTy, Function::ExternalLinkage, "Bool_equals", &_module);
+    llvm::FunctionType* boolEqualsTy = llvm::FunctionType::get(i1Ty, {i1Ty, i1Ty}, false);
+    coolFuncs.bool_equals = llvm::Function::Create(boolEqualsTy, llvm::Function::ExternalLinkage, "Bool_equals", &_module);
     
     // ========== 类型操作函数 ==========
-    
     // isvoid(expr) : Bool
-    FunctionType* isvoidTy = FunctionType::get(boolPtrTy, {objectPtrTy}, false);
-    coolFuncs.isvoid = Function::Create(isvoidTy, Function::ExternalLinkage, "isvoid", &_module);
+    llvm::FunctionType* isvoidTy = llvm::FunctionType::get(i1Ty, {objectPtrTy}, false);
+    coolFuncs.isvoid = llvm::Function::Create(isvoidTy, llvm::Function::ExternalLinkage, "isvoid", &_module);
     
     // new(typename) : Object
-    FunctionType* newTy = FunctionType::get(objectPtrTy, {Type::getInt32Ty(context)}, false);
-    coolFuncs.new_ = Function::Create(newTy, Function::ExternalLinkage, "new", &_module);
-    
-    // ========== 对象生命周期 ==========
+    llvm::FunctionType* newTy = llvm::FunctionType::get(objectPtrTy, {i32Ty}, false);
+    coolFuncs.new_ = llvm::Function::Create(newTy, llvm::Function::ExternalLinkage, "new", &_module);
     
     // 对象初始化
-    FunctionType* objectInitTy = FunctionType::get(Type::getVoidTy(context), {objectPtrTy}, false);
-    coolFuncs.object_init = Function::Create(objectInitTy, Function::ExternalLinkage, "Object_init", &_module);
+    llvm::FunctionType* objectInitTy = llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), {objectPtrTy}, false);
+    coolFuncs.object_init = llvm::Function::Create(objectInitTy, llvm::Function::ExternalLinkage, "Object_init", &_module);
 }
 
 // 类型
