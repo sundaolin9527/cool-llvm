@@ -895,7 +895,15 @@ llvm::Value *CodeGenerator::emit_new__class(new__class *new_class)
     }
     
     // 3. 调用 new 函数
-    return builder.CreateCall(cls->newFunc, {});
+    llvm::Value* result = builder.CreateCall(cls->newFunc, {});
+
+    #ifdef DEBUG
+    std::cout << "Called " << class_name_str << ".new, return type: ";
+    result->getType()->print(llvm::errs());
+    std::cout << std::endl;
+    #endif
+
+    return result;
 }
 
 
@@ -2433,7 +2441,12 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
     
     // 4. 从对象类型中获取类名
     std::string class_name = getSymbolTable().getCoolTypeForLLVMType(obj_ptr->getType());
-    
+    #ifdef DEBUG
+    std::cout << "Object pointer LLVM type: ";
+    obj_ptr->getType()->print(llvm::errs());
+    std::cout << std::endl;
+    std::cout << "Resolved Cool class name: " << class_name << std::endl;
+    #endif
     // 5. 在类层次结构中查找方法信息（包括父类）
     int method_index = -1;
     std::string defining_class;
