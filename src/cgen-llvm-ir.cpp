@@ -2377,7 +2377,7 @@ llvm::Value *CodeGenerator::emit_static_dispatch_class(static_dispatch_class* ex
     }
     
     // 4. 获取方法函数（直接通过模块查找）
-    std::string function_name = type_name_str + "_" + method_name;
+    std::string function_name = type_name_str + "." + method_name;
     llvm::Function* method_func = getSymbolTable().findMethod(type_name_str, function_name);
     if (method_func == nullptr) {
         #ifdef DEBUG
