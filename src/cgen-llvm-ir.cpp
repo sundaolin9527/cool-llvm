@@ -826,10 +826,8 @@ llvm::Function* CodeGenerator::create_new_function(const std::string& className,
     );
     
     // 调用构造函数
-    std::string ctor_name = className + ".ctor";
-    llvm::Function* ctor_func = getModule().getFunction(ctor_name);
-    if (ctor_func) {
-        getIRBuilder().CreateCall(ctor_func, {obj});
+    if (classLayout.constructor) {
+        getIRBuilder().CreateCall(classLayout.constructor, {obj});
     }
     
     getIRBuilder().CreateRet(obj);
@@ -838,6 +836,8 @@ llvm::Function* CodeGenerator::create_new_function(const std::string& className,
     if (saved_block) {
         getIRBuilder().SetInsertPoint(saved_block);
     }
+    
+    return new_func;  // 添加返回值
 }
 
 llvm::Value *CodeGenerator::emit_new__class(new__class *new_class)
@@ -848,39 +848,54 @@ llvm::Value *CodeGenerator::emit_new__class(new__class *new_class)
     if (new_class == nullptr) return nullptr;
     
     std::string class_name_str = new_class->type_name->get_string();
-    _context.setNewClassName(class_name_str);
     llvm::IRBuilder<> &builder = getIRBuilder();
 
-    std::string new_name = class_name_str + ".new";
-    llvm::Function *new_decl = getModule().getFunction(new_name);
+    // 1. 查找类信息
+    ClassLayout* cls = getSymbolTable().findClass(class_name_str);
+    if (cls == nullptr) {
+        #ifdef DEBUG
+        std::cerr << "Error: Class " << class_name_str << " not found" << std::endl;
+        #endif
+        return nullptr;
+    }
     
-    if (!new_decl) {
-        llvm::StructType *class_type = nullptr;
+    // 2. 如果 newFunc 还不存在，创建前向声明
+    if (!cls->newFunc) {
+        std::string new_name = class_name_str + ".new";
         
-        // 查找已定义的结构体类型
-        class_type = llvm::StructType::getTypeByName(_context.getLLVMContext(), class_name_str);
+        // 获取类的 LLVM 类型
+        llvm::StructType *class_type = llvm::StructType::getTypeByName(
+            _context.getLLVMContext(), "class." + class_name_str
+        );
         if (!class_type) {
-            // 如果找不到类型，创建不透明结构体（前向声明）
-            class_type = llvm::StructType::create(_context.getLLVMContext(), class_name_str);
+            // 如果类型还不存在，创建不透明结构体作为前向声明
+            class_type = llvm::StructType::create(
+                _context.getLLVMContext(), 
+                "class." + class_name_str
+            );
         }
         
-        // 构造函数返回类的指针类型
-        llvm::PointerType *return_type = class_type->getPointerTo();
-        
         // 创建函数类型：返回类指针，无参数
-        llvm::FunctionType *func_type = llvm::FunctionType::get(return_type, false);
+        llvm::FunctionType *func_type = llvm::FunctionType::get(
+            class_type->getPointerTo(), 
+            false
+        );
         
-        // 创建构造函数声明
-        new_decl = llvm::Function::Create(
+        // 创建函数声明（没有函数体）
+        cls->newFunc = llvm::Function::Create(
             func_type,
             llvm::Function::ExternalLinkage,
             new_name,
             &getModule()
         );
+        
+        #ifdef DEBUG
+        std::cout << "Created forward declaration for: " << new_name << std::endl;
+        #endif
     }
-
-    // 调用构造函数并返回结果
-    return builder.CreateCall(new_decl, {});
+    
+    // 3. 调用 new 函数
+    return builder.CreateCall(cls->newFunc, {});
 }
 
 
@@ -2967,7 +2982,7 @@ llvm::Value* CodeGenerator::emit_bool_const_class(bool_const_class* expression)
 
 llvm::Value* CodeGenerator::emit_string_const_class(string_const_class* expression) {
     #ifdef DEBUG
-    std::cout << "emit_string_const_class" << expression->token->get_string() << std::endl;
+    std::cout << "emit_string_const_class " << expression->token->get_string() << std::endl;
     #endif
     
     if (expression == nullptr) return nullptr;
@@ -3178,16 +3193,42 @@ llvm::Value *CodeGenerator::emit_program_class(program_class *program)
     for(int i = classes->first(); classes->more(i); i = classes->next(i))
     {
         emit_class_(classes->nth(i));
-        // getModule().print(outs(), nullptr);
-        #ifdef DEBUG
-        if (i == 4) {
-            getModule().print(outs(), nullptr);
-        }
-        #endif
+        getModule().print(outs(), nullptr);
     }
     getModule().print(outs(), nullptr);
-    // 返回值应该获取Main类中的main函数??
-    return nullptr;
+    
+    // 获取 Main.main 方法
+    llvm::Function* main_method = getModule().getFunction("Main.main");
+    if (main_method == nullptr) {
+        #ifdef DEBUG
+        std::cerr << "Error: Main.main() not found" << std::endl;
+        #endif
+        return nullptr;
+    }
+    
+    // 创建入口函数
+    llvm::FunctionType* main_type = llvm::FunctionType::get(
+        llvm::Type::getInt32Ty(getContext().getLLVMContext()), false
+    );
+    llvm::Function* main_func = llvm::Function::Create(
+        main_type, llvm::Function::ExternalLinkage, "main", &getModule()
+    );
+    
+    // 创建基本块
+    llvm::BasicBlock* bb = llvm::BasicBlock::Create(getContext().getLLVMContext(), "entry", main_func);
+    getIRBuilder().SetInsertPoint(bb);
+    
+    // 创建 Main 对象并调用方法
+    llvm::Function* constructor = getModule().getFunction("Main.constructor");
+    llvm::Value* main_obj = constructor ? getIRBuilder().CreateCall(constructor) : nullptr;
+    
+    if (main_obj) {
+        getIRBuilder().CreateCall(main_method, {main_obj});
+    }
+    
+    // 返回 0
+    getIRBuilder().CreateRet(llvm::ConstantInt::get(getContext().getLLVMContext(), llvm::APInt(32, 0)));
+    return main_func;
 }
 
 llvm::Value* CodeGenerator::emit_program(Program program) 

@@ -32,9 +32,6 @@ private:
     // 循环上下文栈
     std::stack<LoopContext> loopStack;
 
-    // new className
-    std::string _newClassName;
-
 public:
     // 禁止拷贝
     CompilerContext(const CompilerContext&) = delete;

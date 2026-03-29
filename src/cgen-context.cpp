@@ -61,11 +61,3 @@ bool CompilerContext::inLoop() const {
 int CompilerContext::getLoopDepth() const {
     return static_cast<int>(loopStack.size());
 }
-
-void CompilerContext::setNewClassName(std::string& newClassName) {
-    _newClassName = newClassName;
-}
-
-std::string CompilerContext::getNewClassName() const{
-    return _newClassName;
-}
