@@ -2341,6 +2341,53 @@ llvm::Value *CodeGenerator::emit_static_dispatch_class(static_dispatch_class* ex
     std::cout << "emit_static_dispatch_class" << std::endl;
     #endif
     if (expression == nullptr) return nullptr;
+    
+    // 1. 生成对象表达式
+    llvm::Value* object = emit_expression(expression->expr);
+    if (object == nullptr) return nullptr;
+    
+    // 2. 获取声明类型名称和方法名称
+    std::string type_name_str = expression->type_name->get_string();
+    std::string method_name = expression->name->get_string();
+    
+    // 3. 生成所有实际参数
+    Expressions body = expression->actual;
+    if (body == nullptr) return nullptr;
+
+    std::vector<llvm::Value*> args;
+    for (int i = body->first(); body->more(i); i = body->next(i)) {
+        llvm::Value* arg = emit_expression(body->nth(i));
+        if (arg == nullptr) return nullptr;
+        args.push_back(arg);
+    }
+    
+    // 4. 获取方法函数（直接通过模块查找）
+    std::string function_name = type_name_str + "_" + method_name;
+    llvm::Function* method_func = getSymbolTable().findMethod(type_name_str, function_name);
+    if (method_func == nullptr) {
+        #ifdef DEBUG
+        std::cerr << "Error: function not found " << function_name << std::endl;
+        #endif
+        return nullptr;
+    }
+    
+    // 5. 准备调用参数（包括 this 指针）
+    std::vector<llvm::Value*> call_args;
+    call_args.push_back(object);
+    call_args.insert(call_args.end(), args.begin(), args.end());
+    
+    // 6. 验证参数数量
+    if (call_args.size() != method_func->arg_size()) {
+        #ifdef DEBUG
+        std::cerr << "Error: argument count mismatch for " << function_name << std::endl;
+        #endif
+        return nullptr;
+    }
+    
+    // 7. 创建调用指令
+    llvm::Value* result = getIRBuilder().CreateCall(method_func, call_args);
+    
+    return result;
 }
 
 // 函数调用
@@ -3108,7 +3155,8 @@ llvm::Value *CodeGenerator::emit_branch_class(branch_class *branch)
     std::cout << "emit_branch_class" << std::endl;
     #endif
     if (branch == nullptr) return nullptr;
-
+    
+    
 }
 
 llvm::Value *CodeGenerator::emit_case(Case _case)
