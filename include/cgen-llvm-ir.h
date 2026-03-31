@@ -58,6 +58,7 @@ private:
     llvm::Function* create_new_function(const std::string& className, ClassLayout& classLayout);
     void generate_method_prototypes(ClassLayout& classLayout);
     void generate_method_bodies(ClassLayout& classLayout);
+    llvm::Function* createMainFunction();
     // ========== 运行时初始化 ==========
     void runtime_init();
     void initObjectClass();

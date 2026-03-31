@@ -233,7 +233,9 @@ void CodeGenerator::registerClassMethods(ClassLayout& layout) {
     // 获取该类的映射表
     auto mapIt = _methodMaps.find(layout.name);
     if (mapIt == _methodMaps.end()) {
+        #ifdef DEBUG
         std::cerr << "Warning: No method map found for class: " << layout.name << std::endl;
+        #endif
         return;
     }
     
@@ -611,7 +613,9 @@ void CodeGenerator::initStringConstants() {
     // 获取 String 类的布局，用于创建 String 对象
     ClassLayout* stringLayout = _symbolTable.findClass("String");
     if (!stringLayout) {
+        #ifdef DEBUG
         std::cerr << "Error: String class not found when initializing constants" << std::endl;
+        #endif
         return;
     }
     
@@ -938,8 +942,10 @@ llvm::Value *CodeGenerator::emit_class__class(class__class* _class)
     if (_class == nullptr) return nullptr;
     
     std::string className = _class->name->get_string();
+    #ifdef DEBUG
     std::cout << "className: " << className << std::endl;
     std::cout << "classParentName: " << _class->parent->get_string() << std::endl;
+    #endif
     SymbolTableManager& symbol_table = getSymbolTable();
     
     // 检查是否已生成该类
@@ -992,11 +998,14 @@ void CodeGenerator::generate_method_prototypes(ClassLayout& classLayout)
     
     for (auto& methodInfo : classLayout.methods) {
         if (methodInfo.method) {
+            #ifdef DEBUG
             std::cout << "  Processing method: " << methodInfo.name << std::endl;
-            
+            #endif
             // 检查是否已经有函数（可能是内置方法）
             if (methodInfo.func != nullptr) {
+                #ifdef DEBUG
                 std::cout << "    Already has function, skipping" << std::endl;
+                #endif
                 continue;
             }
             
@@ -1017,7 +1026,9 @@ void CodeGenerator::generate_method_prototypes(ClassLayout& classLayout)
             #endif
             llvm::Type* returnType = mapCoolTypeToLLVM(returnTypeName);
             if (!returnType) {
+                #ifdef DEBUG
                 std::cerr << "    Error: Failed to map return type: " << returnTypeName << std::endl;
+                #endif
                 continue;
             }
             
@@ -1043,7 +1054,9 @@ void CodeGenerator::generate_method_prototypes(ClassLayout& classLayout)
                 #endif
                 llvm::Type* paramType = mapCoolTypeToLLVM(typeName);
                 if (!paramType) {
+                    #ifdef DEBUG
                     std::cerr << "    Error: Failed to map parameter type: " << typeName << std::endl;
+                    #endif
                     continue;
                 }
                 paramTypes.push_back(paramType);
@@ -2341,14 +2354,18 @@ llvm::Value *CodeGenerator::emit_assign_class(assign_class* expression)
 
     llvm::Value* rhs = emit_expression(expression->expr);
     if (!rhs) {
+        #ifdef DEBUG
         std::cerr << "Error: Failed to evaluate RHS of assignment" << std::endl;
+        #endif
         return nullptr;
     }
 
     VariableInfo* varInfo = findVariable(expression->name->get_string());
     if (!varInfo) 
     {
+        #ifdef DEBUG
         std::cerr << "Error: VariableInfo is null" << std::endl;
+        #endif
         return nullptr;
     }
     // llvm::Type* expectedType = varInfo.type;
@@ -2465,8 +2482,10 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
     }
     
     if (method_index < 0) {
+        #ifdef DEBUG
         std::cerr << "Error: Method " << method_name << " not found in class hierarchy of " 
                   << class_name << std::endl;
+        #endif
         return nullptr;
     }
     
@@ -2512,8 +2531,10 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
     }
     
     if (method_func == nullptr) {
+        #ifdef DEBUG
         std::cerr << "Error: Cannot find LLVM function for method " 
                   << method_name << std::endl;
+        #endif
         return nullptr;
     }
     
@@ -3195,6 +3216,42 @@ llvm::Value *CodeGenerator::emit_case(Case _case)
     return emit_branch_class((branch_class*)_case);
 }
 
+llvm::Function* CodeGenerator::createMainFunction()
+{
+    // 创建入口函数
+    llvm::FunctionType* main_type = llvm::FunctionType::get(
+        llvm::Type::getInt32Ty(getContext().getLLVMContext()), false
+    );
+    llvm::Function* main_func = llvm::Function::Create(
+        main_type, llvm::Function::ExternalLinkage, "main", &getModule()
+    );
+    
+    // 创建基本块
+    llvm::BasicBlock* bb = llvm::BasicBlock::Create(getContext().getLLVMContext(), "entry", main_func);
+    getIRBuilder().SetInsertPoint(bb);
+    
+    // 获取 Main.main 方法并直接调用
+    llvm::Function* main_method = getModule().getFunction("Main.main");
+    if (main_method != nullptr) {
+        // 创建 Main 对象并调用方法
+        llvm::Function* constructor = getModule().getFunction("Main.new");
+        llvm::Value* main_obj = constructor ? getIRBuilder().CreateCall(constructor) : nullptr;
+        
+        if (main_obj) {
+            getIRBuilder().CreateCall(main_method, {main_obj});
+        }
+    } else {
+        #ifdef DEBUG
+        std::cerr << "Error: Main.main() not found" << std::endl;
+        #endif
+    }
+    
+    // 返回 0
+    getIRBuilder().CreateRet(llvm::ConstantInt::get(getContext().getLLVMContext(), llvm::APInt(32, 0)));
+    
+    return main_func;
+}
+
 llvm::Value *CodeGenerator::emit_program_class(program_class *program)
 {
     #ifdef DEBUG
@@ -3208,38 +3265,7 @@ llvm::Value *CodeGenerator::emit_program_class(program_class *program)
         emit_class_(classes->nth(i));
     }
     
-    // 获取 Main.main 方法
-    llvm::Function* main_method = getModule().getFunction("Main.main");
-    if (main_method == nullptr) {
-        #ifdef DEBUG
-        std::cerr << "Error: Main.main() not found" << std::endl;
-        #endif
-        return nullptr;
-    }
-    
-    // 创建入口函数
-    llvm::FunctionType* main_type = llvm::FunctionType::get(
-        llvm::Type::getInt32Ty(getContext().getLLVMContext()), false
-    );
-    llvm::Function* main_func = llvm::Function::Create(
-        main_type, llvm::Function::ExternalLinkage, "main", &getModule()
-    );
-    
-    // 创建基本块
-    llvm::BasicBlock* bb = llvm::BasicBlock::Create(getContext().getLLVMContext(), "entry", main_func);
-    getIRBuilder().SetInsertPoint(bb);
-    
-    // 创建 Main 对象并调用方法
-    llvm::Function* constructor = getModule().getFunction("Main.constructor");
-    llvm::Value* main_obj = constructor ? getIRBuilder().CreateCall(constructor) : nullptr;
-    
-    if (main_obj) {
-        getIRBuilder().CreateCall(main_method, {main_obj});
-    }
-    
-    // 返回 0
-    getIRBuilder().CreateRet(llvm::ConstantInt::get(getContext().getLLVMContext(), llvm::APInt(32, 0)));
-    return main_func;
+    return nullptr;
 }
 
 llvm::Value* CodeGenerator::emit_program(Program program) 
@@ -3248,5 +3274,7 @@ llvm::Value* CodeGenerator::emit_program(Program program)
     std::cout << "emit_program" << std::endl;
     #endif
 
-    return emit_program_class((program_class*)program);
+    emit_program_class((program_class*)program);
+    // 然后创建入口main函数（调用 Main.main）
+    return createMainFunction(); 
 }
