@@ -704,7 +704,7 @@ void CodeGenerator::emit_llvm_ir(Program program) {
     
     runtime_init();
     emit_program(program);
-
+    dumpIR();
     if (!verifyModule()) {
         std::cerr << "Warning: Module verification failed!" << std::endl;
     }
@@ -3206,9 +3206,7 @@ llvm::Value *CodeGenerator::emit_program_class(program_class *program)
     for(int i = classes->first(); classes->more(i); i = classes->next(i))
     {
         emit_class_(classes->nth(i));
-        getModule().print(outs(), nullptr);
     }
-    getModule().print(outs(), nullptr);
     
     // 获取 Main.main 方法
     llvm::Function* main_method = getModule().getFunction("Main.main");
