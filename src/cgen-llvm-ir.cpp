@@ -3233,13 +3233,8 @@ llvm::Function* CodeGenerator::createMainFunction()
     // 获取 Main.main 方法并直接调用
     llvm::Function* main_method = getModule().getFunction("Main.main");
     if (main_method != nullptr) {
-        // 创建 Main 对象并调用方法
-        llvm::Function* constructor = getModule().getFunction("Main.new");
-        llvm::Value* main_obj = constructor ? getIRBuilder().CreateCall(constructor) : nullptr;
-        
-        if (main_obj) {
-            getIRBuilder().CreateCall(main_method, {main_obj});
-        }
+        // 直接调用 Main.main()
+        getIRBuilder().CreateCall(main_method);
     } else {
         #ifdef DEBUG
         std::cerr << "Error: Main.main() not found" << std::endl;

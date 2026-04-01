@@ -363,7 +363,7 @@ class Main inherits IO {
                   -- square
                if char = "f" then avar <- (new C)@C.method5(avar.value()) else
                   -- cube
-               if char = "g" then -- multiple of 3?
+               (*if char = "g" then -- multiple of 3?
                   if ((new D).method7(avar.value()))
                   then -- avar <- (new A).method1(avar.value())
                      {
@@ -377,7 +377,7 @@ class Main inherits IO {
                         print(avar);
                         out_string("is not divisible by 3.\n");
                      }
-                  fi else
+                  fi else*)
                if char = "h" then 
                   (let x : A in
                      {
@@ -406,7 +406,7 @@ class Main inherits IO {
                if char = "q" then flag <- false
                else
                   avar <- (new A).method1(avar.value()) -- divide/8
-               fi fi fi fi fi fi fi fi fi fi;
+               fi fi fi fi fi fi fi fi fi;
             }
          pool;
       }
