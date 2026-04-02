@@ -40,37 +40,62 @@ struct VariableInfo {
     StorageClass storage;  // 存储类别
     llvm::Value* value = nullptr;    // LLVM值
     std::string className;           // 所属类名（对成员变量和静态成员）
+    std::string varName;             // 变量名
     std::string typeName;            // 变量的类型
-    std::size_t offset;
+    std::size_t offset;              // 在类中的偏移
     
     VariableInfo() = default;
     VariableInfo(StorageClass s, llvm::Value* v = nullptr, 
-                const std::string& cls = "", const std::string t = "")
-        : storage(s), value(v), className(cls), typeName(t) {}
+                const std::string& cls = "", const std::string& name = "",
+                const std::string& t = "", std::size_t off = 0)
+        : storage(s), value(v), className(cls), varName(name), typeName(t), offset(off) {}
     
-    static VariableInfo create(StorageClass s, llvm::Value* v = nullptr, std::string className="", std::string typeName="") {
-        return VariableInfo(s, v, className, typeName);
+    static VariableInfo create(StorageClass s, llvm::Value* v = nullptr, 
+                               std::string className = "", std::string varName = "", 
+                               std::string typeName = "", std::size_t offset = 0) {
+        return VariableInfo(s, v, className, varName, typeName, offset);
     }
-    static VariableInfo createMember(llvm::Value* address = nullptr, std::string className="", std::string typeName="") {
-        return create(StorageClass::MEMBER, address, className, typeName);
+    static VariableInfo createMember(llvm::Value* address = nullptr, 
+                                     std::string className = "", 
+                                     std::string varName = "", 
+                                     std::string typeName = "", 
+                                     std::size_t offset = 0) {
+        return create(StorageClass::MEMBER, address, className, varName, typeName, offset);
     }
-    static VariableInfo createStaticMember(llvm::Value* v = nullptr, std::string className="", std::string typeName="") {
-        return create(StorageClass::STATIC_MEMBER, v, className, typeName);
+    static VariableInfo createStaticMember(llvm::Value* v = nullptr, 
+                                          std::string className = "", 
+                                          std::string varName = "", 
+                                          std::string typeName = "", 
+                                          std::size_t offset = 0) {
+        return create(StorageClass::STATIC_MEMBER, v, className, varName, typeName, offset);
     }
-    static VariableInfo createLocal(llvm::Value* allocaInst = nullptr, std::string className="", std::string typeName="") {
-        return create(StorageClass::LOCAL, allocaInst, className, typeName);
+    static VariableInfo createLocal(llvm::Value* allocaInst = nullptr, 
+                                   std::string className = "", 
+                                   std::string varName = "", 
+                                   std::string typeName = "") {
+        return create(StorageClass::LOCAL, allocaInst, className, varName, typeName, 0);
     }
-    static VariableInfo createParam(llvm::Value* paramValue = nullptr, std::string className="", std::string typeName="") {
-        return create(StorageClass::PARAM, paramValue, className, typeName);
+    static VariableInfo createParam(llvm::Value* paramValue = nullptr, 
+                                   std::string className = "", 
+                                   std::string varName = "", 
+                                   std::string typeName = "") {
+        return create(StorageClass::PARAM, paramValue, className, varName, typeName, 0);
     }
-    static VariableInfo createGlobal(llvm::Value* globalVar = nullptr, std::string className="", std::string typeName="") {
-        return create(StorageClass::_GLOBAL, globalVar, className, typeName);
+    static VariableInfo createGlobal(llvm::Value* globalVar = nullptr, 
+                                    std::string className = "", 
+                                    std::string varName = "", 
+                                    std::string typeName = "") {
+        return create(StorageClass::_GLOBAL, globalVar, className, varName, typeName, 0);
     }
     void updateValue(llvm::Value* newValue) {
         value = newValue;
     }
+    
+    void updateOffset(std::size_t newOffset) {
+        offset = newOffset;
+    }
 
-    char* storageClassToString(StorageClass sc) const{
+    const char* storageClassToString(StorageClass sc) const{
         switch (sc) {
             case StorageClass::MEMBER:        return "MEMBER";
             case StorageClass::STATIC_MEMBER: return "STATIC_MEMBER";
@@ -90,9 +115,18 @@ struct VariableInfo {
             value->print(vso);
         }
         
-        return "VariableInfo{type='" + typeName + "', storage=" + 
-               storageClassToString(storage) + ", value='" + 
-               valueStr + "', className='" + className + "'}";
+        std::string result = "VariableInfo{name='" + varName + 
+                            "', type='" + typeName + 
+                            "', storage=" + storageClassToString(storage);
+        
+        if (offset > 0 || storage == StorageClass::MEMBER || storage == StorageClass::STATIC_MEMBER) {
+            result += ", offset=" + std::to_string(offset);
+        }
+        
+        result += ", className='" + className + 
+                  "', value='" + valueStr + "'}";
+        
+        return result;
     }
 };
 

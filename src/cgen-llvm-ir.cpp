@@ -415,7 +415,7 @@ void CodeGenerator::initIntClass() {
     
     // Int 自己的属性
     layout.ownAttributes = {
-        {"value", VariableInfo::createMember(nullptr, "Int", "Int")}
+        {"value", VariableInfo::createMember(nullptr, "Int", "value", "Int", 0)}
     };
     
     // Int 的方法（包含继承的和自己的）
@@ -451,10 +451,7 @@ void CodeGenerator::initBoolClass() {
     
     // Bool 类的属性：一个布尔值
     layout.ownAttributes = {
-        {"value", VariableInfo::createMember(
-            nullptr,
-            "Bool", "Bool"
-        )}
+        {"value", VariableInfo::createMember(nullptr, "Bool", "value", "Bool", 0)}
     };
     
     // Bool 类的方法
@@ -501,17 +498,23 @@ void CodeGenerator::initStringClass() {
         {"data", VariableInfo::createMember(
             nullptr,
             "String", 
-            "String"
+            "data",
+            "String",
+            0
         )},
         {"length", VariableInfo::createMember(
             nullptr,
             "String", 
-            "Int"
+            "length",
+            "Int",
+            1
         )},
         {"hash", VariableInfo::createMember(
             nullptr,
             "String", 
-            "Int"
+            "hash",
+            "Int",
+            2
         )}
     };
     
@@ -1164,7 +1167,7 @@ void CodeGenerator::generate_method_bodies(ClassLayout& classLayout)
                 
                 getSymbolTable().currentScope()->addVariable(
                     paramNames[i], 
-                    VariableInfo::createParam(alloca, classLayout.name, paramType)
+                    VariableInfo::createParam(alloca, classLayout.name, paramNames[i], paramType)
                 );
                 i++;
             }
@@ -1219,7 +1222,7 @@ ClassLayout CodeGenerator::collect_class_info(class__class* _class)
     ClassLayout classLayout;
     classLayout.name = _class->name->get_string();
     classLayout.parentName = _class->parent->get_string();
-    
+    int offset = 0;
     for (int i = _class->features->first(); _class->features->more(i); i = _class->features->next(i)) {
         Feature_class *feature = _class->features->nth(i);
         
@@ -1227,7 +1230,8 @@ ClassLayout CodeGenerator::collect_class_info(class__class* _class)
             // 收集当前类自己的属性
             std::string attrName = attr->name->get_string();
             std::string typeName = attr->type_decl->get_string();
-            classLayout.ownAttributes.emplace(attrName, VariableInfo::createMember(nullptr, classLayout.name, typeName));
+            classLayout.ownAttributes.emplace(attrName, VariableInfo::createMember(nullptr, classLayout.name, attrName, typeName, offset));
+            offset++;
         }
         else if (method_class *method = dynamic_cast<method_class*>(feature)) {
             // 收集当前类自己的方法
@@ -2105,7 +2109,9 @@ void CodeGenerator::generate_constructor(ClassLayout& classLayout)
     classLayout.ownAttributes["self"] = VariableInfo::createMember(
         thisPtr, 
         classLayout.name, 
-        classLayout.name
+        "this",
+        classLayout.name,
+        0
     );
     
     getIRBuilder().CreateRetVoid();
@@ -2236,7 +2242,7 @@ llvm::Value *CodeGenerator::emit_method_class(method_class* method)
             );
             // 存储参数值到分配的空间
             getIRBuilder().CreateStore(&arg, alloca);
-            curr_scope->addVariable(paramNames[i], VariableInfo::createParam(alloca, className, paramTypeNames[i]));
+            curr_scope->addVariable(paramNames[i], VariableInfo::createParam(alloca, className, paramNames[i], paramTypeNames[i]));
             i++;
         }
         
@@ -2862,7 +2868,7 @@ llvm::Value *CodeGenerator::emit_let_class(let_class* expression)
     }
 
     (getSymbolTable().currentScope())->addVariable(varName, 
-        VariableInfo::createParam(alloca, getSymbolTable().getCurrentClassName(), expression->type_decl->get_string()));
+        VariableInfo::createParam(alloca, getSymbolTable().getCurrentClassName(), varName, expression->type_decl->get_string()));
 
     llvm::Value* result = emit_expression(expression->body);
 
