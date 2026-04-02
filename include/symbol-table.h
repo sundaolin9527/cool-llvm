@@ -226,6 +226,7 @@ public:
     void exitClass();
     std::string getCurrentClassName() const;
     llvm::StructType* getCurrentClassType() const;
+    llvm::Value* getCurrentThisPointer() const;
     bool inClass() const;
     int getClassDepth() const;
     int getFunctionDepth() const;

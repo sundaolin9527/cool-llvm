@@ -2068,7 +2068,6 @@ void CodeGenerator::generate_constructor(ClassLayout& classLayout)
     unsigned i = 0;
     
     for (auto& attr : classLayout.ownAttributes) {
-        // 跳过self成员（稍后处理）
         if (attr.first == "self") continue;
         
         VariableInfo& varInfo = attr.second;
@@ -2079,7 +2078,8 @@ void CodeGenerator::generate_constructor(ClassLayout& classLayout)
             classLayout.type,
             thisPtr,
             fieldIndex + i,
-            attr.first + ".addr"
+            // attr.first + ".addr"
+            "this.addr"
         );
         
         // 初始化为默认值
@@ -2374,10 +2374,96 @@ llvm::Value *CodeGenerator::emit_assign_class(assign_class* expression)
         #endif
         return nullptr;
     }
-    // llvm::Type* expectedType = varInfo.type;
-    // llvm::Type* actualType = rhs->getType();
-    // 需要检测类型是否一致(todo*)
-    getIRBuilder().CreateStore(rhs, varInfo->value);
+    
+    llvm::Value* ptr = nullptr;
+    
+    switch (varInfo->storage)
+    {
+        case StorageClass::MEMBER:
+        {
+            llvm::Value* thisPtr = getSymbolTable().getCurrentThisPointer();
+            if (!thisPtr) {
+                #ifdef DEBUG
+                std::cerr << "Error: No this pointer available for member access" << std::endl;
+                #endif
+                return nullptr;
+            }
+            
+            llvm::Type* classType = getSymbolTable().getCurrentClassType();
+            if (!classType) {
+                #ifdef DEBUG
+                std::cerr << "Error: Cannot get current class type" << std::endl;
+                #endif
+                return nullptr;
+            }
+            
+            // 调试：输出类型信息
+            #ifdef DEBUG
+            std::cerr << "classType: ";
+            classType->print(llvm::errs());
+            std::cerr << std::endl;
+            std::cerr << "thisPtr type: ";
+            thisPtr->getType()->print(llvm::errs());
+            std::cerr << std::endl;
+            std::cerr << "offset: " << varInfo->offset << std::endl;
+            #endif
+            
+            // 检查 classType 是否是结构体
+            if (!classType->isStructTy()) {
+                #ifdef DEBUG
+                std::cerr << "Error: classType is not a structure type!" << std::endl;
+                #endif
+                return nullptr;
+            }
+            
+            // 获取结构体中的元素数量
+            llvm::StructType* structType = llvm::cast<llvm::StructType>(classType);
+            #ifdef DEBUG
+            std::cerr << "Struct has " << structType->getNumElements() << " elements" << std::endl;
+            #endif
+            
+            // 确保偏移量在范围内
+            if (varInfo->offset >= structType->getNumElements()) {
+                #ifdef DEBUG
+                std::cerr << "Error: Offset out of range!" << std::endl;
+                #endif
+                return nullptr;
+            }
+            
+            // 创建索引
+            std::vector<llvm::Value*> indices = {
+                getIRBuilder().getInt32(0),
+                getIRBuilder().getInt32(varInfo->offset)
+            };
+            
+            ptr = getIRBuilder().CreateGEP(classType, thisPtr, indices,
+                                        std::string(expression->name->get_string()) + ".ptr");
+            break;
+        }
+        default:
+        {
+            if (!varInfo->value) {
+                #ifdef DEBUG
+                std::cerr << "Error: Variable value is null" << std::endl;
+                #endif
+                return nullptr;
+            }
+            ptr = varInfo->value;
+            break;
+        }
+    }
+    
+    // 类型检查
+    llvm::Type* expectedType = mapCoolTypeToLLVM(varInfo->typeName);
+    llvm::Type* actualType = rhs->getType();
+    if (expectedType != actualType) {
+        #ifdef DEBUG
+        std::cerr << "Warning: Type mismatch in assignment. Expected: " 
+                  << varInfo->typeName << std::endl;
+        #endif
+    }
+    
+    getIRBuilder().CreateStore(rhs, ptr);
     return rhs;
 }
 

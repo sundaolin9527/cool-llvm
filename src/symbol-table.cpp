@@ -116,6 +116,23 @@ llvm::StructType* SymbolTableManager::getCurrentClassType() const {
     return it->second.type;
 }
 
+llvm::Value* SymbolTableManager::getCurrentThisPointer() const {
+    std::string currClassName = getCurrentClassName();
+
+    if (currClassName.empty()) {
+        return nullptr;
+    }
+    auto it = classRegistry.find(currClassName);
+    if (it == classRegistry.end()) {
+        return nullptr;
+    }
+    if (it->second.constructor)
+    {
+        return (it->second.constructor)->arg_begin();
+    }
+    return nullptr;
+}
+
 bool SymbolTableManager::inClass() const {
     return !classStack.empty();
 }
