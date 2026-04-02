@@ -2,7 +2,352 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/Support/raw_ostream.h>
 #include <iostream>
+#include <algorithm>
 #include "cgen-context.h"
+
+namespace {
+
+std::string normalize_cool_type(SymbolTableManager& symbolTable, const std::string& typeName);
+
+llvm::Type* map_cool_type(CodeGenerator& generator, const std::string& typeName) {
+    SymbolTableManager& symbolTable = generator.getSymbolTable();
+    llvm::LLVMContext& ctx = generator.getContext().getLLVMContext();
+    std::string normalized = normalize_cool_type(symbolTable, typeName);
+
+    if (normalized == "Int") {
+        return llvm::Type::getInt32Ty(ctx);
+    }
+    if (normalized == "Bool") {
+        return llvm::Type::getInt1Ty(ctx);
+    }
+    if (normalized == "String") {
+        return llvm::Type::getInt8PtrTy(ctx);
+    }
+
+    std::string structName = "class." + normalized;
+    if (llvm::StructType* structType = llvm::StructType::getTypeByName(ctx, structName)) {
+        return llvm::PointerType::get(structType, 0);
+    }
+
+    return llvm::Type::getInt8PtrTy(ctx)->getPointerTo();
+}
+
+std::string normalize_cool_type(SymbolTableManager& symbolTable, const std::string& typeName) {
+    if (typeName.empty() || typeName == "SELF_TYPE") {
+        return symbolTable.getCurrentClassName();
+    }
+    return typeName;
+}
+
+bool is_primitive_cool_type(const std::string& typeName) {
+    return typeName == "String" || typeName == "Int" || typeName == "Bool";
+}
+
+std::string builtin_return_type(const std::string& receiverType, const std::string& methodName) {
+    if (receiverType == "String") {
+        if (methodName == "length") return "Int";
+        if (methodName == "concat" || methodName == "substr") return "String";
+        if (methodName == "equals") return "Bool";
+    }
+    if (receiverType == "Int") {
+        if (methodName == "plus" || methodName == "minus" || methodName == "times" ||
+            methodName == "divide" || methodName == "negate") {
+            return "Int";
+        }
+        if (methodName == "equals") return "Bool";
+    }
+    if (receiverType == "Bool") {
+        if (methodName == "not" || methodName == "equals") return "Bool";
+    }
+    if (receiverType == "Object") {
+        if (methodName == "copy") return "SELF_TYPE";
+        if (methodName == "abort") return "Object";
+        if (methodName == "type_name") return "String";
+    }
+    if (receiverType == "IO") {
+        if (methodName == "out_string" || methodName == "out_int") return "SELF_TYPE";
+        if (methodName == "in_string") return "String";
+        if (methodName == "in_int") return "Int";
+    }
+    return "";
+}
+
+llvm::Function* find_builtin_method_in_hierarchy(CodeGenerator& generator,
+                                                 SymbolTableManager& symbolTable,
+                                                 const std::string& className,
+                                                 const std::string& methodName) {
+    std::string current = className;
+    while (!current.empty()) {
+        if (llvm::Function* func = symbolTable.findMethod(current, methodName)) {
+            return func;
+        }
+        ClassLayout* layout = symbolTable.findClass(current);
+        if (!layout) {
+            break;
+        }
+        current = layout->parentName;
+    }
+    return nullptr;
+}
+
+std::string infer_dispatch_return_type(CodeGenerator& generator,
+                                       const std::string& receiverType,
+                                       const std::string& methodName) {
+    SymbolTableManager& symbolTable = generator.getSymbolTable();
+    std::string normalizedReceiver = normalize_cool_type(symbolTable, receiverType);
+    if (normalizedReceiver.empty()) {
+        return "";
+    }
+
+    if (std::string builtinType = builtin_return_type(normalizedReceiver, methodName); !builtinType.empty()) {
+        if (builtinType == "SELF_TYPE") {
+            return normalizedReceiver;
+        }
+        return builtinType;
+    }
+
+    ClassLayout* layout = symbolTable.findClass(normalizedReceiver);
+    while (layout) {
+        for (const auto& methodInfo : layout->methods) {
+            if (methodInfo.name != methodName || methodInfo.method == nullptr) {
+                continue;
+            }
+
+            std::string returnType = methodInfo.method->return_type->get_string();
+            if (returnType == "SELF_TYPE") {
+                return normalizedReceiver;
+            }
+            return returnType;
+        }
+
+        if (std::string builtinType = builtin_return_type(layout->name, methodName); !builtinType.empty()) {
+            if (builtinType == "SELF_TYPE") {
+                return normalizedReceiver;
+            }
+            return builtinType;
+        }
+
+        if (layout->parentName.empty()) {
+            break;
+        }
+        layout = symbolTable.findClass(layout->parentName);
+    }
+
+    return "";
+}
+
+std::string infer_expression_type(Expression expression, CodeGenerator& generator) {
+    if (expression == nullptr) {
+        return "";
+    }
+
+    SymbolTableManager& symbolTable = generator.getSymbolTable();
+
+    if (expression->get_type() != nullptr) {
+        std::string typed = expression->get_type()->get_string();
+        if (!typed.empty()) {
+            return normalize_cool_type(symbolTable, typed);
+        }
+    }
+
+    if (dynamic_cast<int_const_class*>(expression) ||
+        dynamic_cast<plus_class*>(expression) ||
+        dynamic_cast<sub_class*>(expression) ||
+        dynamic_cast<mul_class*>(expression) ||
+        dynamic_cast<divide_class*>(expression) ||
+        dynamic_cast<neg_class*>(expression)) {
+        return "Int";
+    }
+
+    if (dynamic_cast<bool_const_class*>(expression) ||
+        dynamic_cast<lt_class*>(expression) ||
+        dynamic_cast<leq_class*>(expression) ||
+        dynamic_cast<eq_class*>(expression) ||
+        dynamic_cast<comp_class*>(expression) ||
+        dynamic_cast<isvoid_class*>(expression)) {
+        return "Bool";
+    }
+
+    if (dynamic_cast<string_const_class*>(expression)) {
+        return "String";
+    }
+
+    if (auto* objectExpr = dynamic_cast<object_class*>(expression)) {
+        std::string name = objectExpr->name->get_string();
+        if (name == "self") {
+            return symbolTable.getCurrentClassName();
+        }
+        if (VariableInfo* varInfo = symbolTable.findVariable(name)) {
+            return normalize_cool_type(symbolTable, varInfo->typeName);
+        }
+        return "";
+    }
+
+    if (auto* newExpr = dynamic_cast<new__class*>(expression)) {
+        return normalize_cool_type(symbolTable, newExpr->type_name->get_string());
+    }
+
+    if (auto* assignExpr = dynamic_cast<assign_class*>(expression)) {
+        if (VariableInfo* varInfo = symbolTable.findVariable(assignExpr->name->get_string())) {
+            return normalize_cool_type(symbolTable, varInfo->typeName);
+        }
+        return infer_expression_type(assignExpr->expr, generator);
+    }
+
+    if (auto* blockExpr = dynamic_cast<block_class*>(expression)) {
+        Expressions body = blockExpr->body;
+        if (body == nullptr) {
+            return "";
+        }
+        std::string lastType;
+        for (int i = body->first(); body->more(i); i = body->next(i)) {
+            lastType = infer_expression_type(body->nth(i), generator);
+        }
+        return lastType;
+    }
+
+    if (auto* letExpr = dynamic_cast<let_class*>(expression)) {
+        return infer_expression_type(letExpr->body, generator);
+    }
+
+    if (auto* dispatchExpr = dynamic_cast<dispatch_class*>(expression)) {
+        std::string receiverType = infer_expression_type(dispatchExpr->expr, generator);
+        return infer_dispatch_return_type(generator, receiverType, dispatchExpr->name->get_string());
+    }
+
+    if (auto* staticDispatchExpr = dynamic_cast<static_dispatch_class*>(expression)) {
+        return infer_dispatch_return_type(
+            generator,
+            staticDispatchExpr->type_name->get_string(),
+            staticDispatchExpr->name->get_string()
+        );
+    }
+
+    if (auto* condExpr = dynamic_cast<cond_class*>(expression)) {
+        std::string thenType = infer_expression_type(condExpr->then_exp, generator);
+        std::string elseType = infer_expression_type(condExpr->else_exp, generator);
+        if (thenType == elseType) {
+            return thenType;
+        }
+        if (thenType.empty()) return elseType;
+        if (elseType.empty()) return thenType;
+        return "Object";
+    }
+
+    if (auto* caseExpr = dynamic_cast<typcase_class*>(expression)) {
+        std::string bestType;
+        Cases cases = caseExpr->cases;
+        if (cases == nullptr) {
+            return "";
+        }
+        for (int i = cases->first(); cases->more(i); i = cases->next(i)) {
+            auto* branchExpr = dynamic_cast<branch_class*>(cases->nth(i));
+            if (!branchExpr) {
+                continue;
+            }
+            std::string branchType = infer_expression_type(branchExpr->expr, generator);
+            if (bestType.empty()) {
+                bestType = branchType;
+            } else if (bestType != branchType) {
+                return "Object";
+            }
+        }
+        return bestType;
+    }
+
+    return "";
+}
+
+llvm::Value* load_current_self(CodeGenerator& generator) {
+    VariableInfo* selfInfo = generator.getSymbolTable().findVariable("this");
+    if (!selfInfo || !selfInfo->value) {
+        return nullptr;
+    }
+
+    llvm::Type* thisType = map_cool_type(generator, selfInfo->typeName);
+    return generator.getIRBuilder().CreateLoad(thisType, selfInfo->value, "self");
+}
+
+llvm::Value* get_member_address(CodeGenerator& generator, const VariableInfo& varInfo) {
+    llvm::Value* selfValue = load_current_self(generator);
+    if (!selfValue) {
+        return nullptr;
+    }
+
+    llvm::IRBuilder<>& builder = generator.getIRBuilder();
+    llvm::LLVMContext& ctx = generator.getContext().getLLVMContext();
+    llvm::Value* bytePtr = builder.CreateBitCast(selfValue, llvm::Type::getInt8PtrTy(ctx), "member.base");
+    llvm::Value* fieldBytePtr = builder.CreateGEP(
+        llvm::Type::getInt8Ty(ctx),
+        bytePtr,
+        llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx), static_cast<uint32_t>(varInfo.offset)),
+        varInfo.varName + ".addr"
+    );
+
+    llvm::Type* fieldType = map_cool_type(generator, varInfo.typeName);
+    return builder.CreateBitCast(fieldBytePtr, llvm::PointerType::get(fieldType, 0), varInfo.varName + ".ptr");
+}
+
+llvm::Value* coerce_value_to_type(CodeGenerator& generator,
+                                  llvm::Value* value,
+                                  llvm::Type* targetType,
+                                  const std::string& name) {
+    if (value == nullptr || targetType == nullptr) {
+        return value;
+    }
+
+    llvm::Type* sourceType = value->getType();
+    if (sourceType == targetType) {
+        return value;
+    }
+
+    llvm::IRBuilder<>& builder = generator.getIRBuilder();
+    llvm::LLVMContext& ctx = generator.getContext().getLLVMContext();
+
+    if (sourceType->isPointerTy() && targetType->isPointerTy()) {
+        return builder.CreatePointerCast(value, targetType, name);
+    }
+
+    if (sourceType->isIntegerTy() && targetType->isIntegerTy()) {
+        return builder.CreateIntCast(value, targetType, true, name);
+    }
+
+    if (sourceType->isIntegerTy() && targetType->isFloatingPointTy()) {
+        return builder.CreateSIToFP(value, targetType, name);
+    }
+
+    if (sourceType->isFloatingPointTy() && targetType->isIntegerTy()) {
+        return builder.CreateFPToSI(value, targetType, name);
+    }
+
+    if (sourceType->isFloatingPointTy() && targetType->isFloatingPointTy()) {
+        return builder.CreateFPCast(value, targetType, name);
+    }
+
+    if (sourceType->isPointerTy() && targetType->isIntegerTy()) {
+        return builder.CreatePtrToInt(value, targetType, name);
+    }
+
+    if (sourceType->isIntegerTy() && targetType->isPointerTy()) {
+        return builder.CreateIntToPtr(value, targetType, name);
+    }
+
+    if (targetType->isPointerTy()) {
+        return llvm::ConstantPointerNull::get(static_cast<llvm::PointerType*>(targetType));
+    }
+
+    if (targetType->isIntegerTy()) {
+        return llvm::ConstantInt::get(targetType, 0);
+    }
+
+    if (targetType->isFloatingPointTy()) {
+        return llvm::ConstantFP::get(targetType, 0.0);
+    }
+
+    return value;
+}
+
+}
 
 llvm::Type* CodeGenerator::mapCoolTypeToLLVM(const std::string& typeName) {
     // 占位符类型直接返回，不缓存
@@ -30,10 +375,20 @@ llvm::Type* CodeGenerator::mapCoolTypeToLLVM(const std::string& typeName) {
         resultType = llvm::Type::getInt8PtrTy(ctx);
     } 
     else if (typeName == "SELF_TYPE") {
-        llvm::StructType* currentClassType = getSymbolTable().getCurrentClassType();
-        if (currentClassType) {
-            resultType = currentClassType->getPointerTo();
-        } else {
+        std::string currentClassName = getSymbolTable().getCurrentClassName();
+        if (!currentClassName.empty()) {
+            llvm::StructType* namedType = llvm::StructType::getTypeByName(ctx, "class." + currentClassName);
+            if (namedType) {
+                resultType = namedType->getPointerTo();
+            }
+        }
+        if (!resultType) {
+            llvm::StructType* currentClassType = getSymbolTable().getCurrentClassType();
+            if (currentClassType) {
+                resultType = currentClassType->getPointerTo();
+            }
+        }
+        if (!resultType) {
             resultType = llvm::PointerType::get(llvm::Type::getInt8Ty(ctx), 0);
         }
     } 
@@ -1136,10 +1491,12 @@ void CodeGenerator::generate_method_bodies(ClassLayout& classLayout)
             
             // 进入方法作用域
             getSymbolTable().enterScope();
+            getSymbolTable().enterMethod(methodInfo.name);
             
             // 设置参数
             size_t i = 0;
             std::vector<std::string> paramNames = emit_formals(method->formals).first;
+            llvm::AllocaInst* thisAlloca = nullptr;
             for (auto& arg : func->args()) {
                 // 创建alloca指令分配空间
                 llvm::AllocaInst* alloca = getIRBuilder().CreateAlloca(
@@ -1150,7 +1507,7 @@ void CodeGenerator::generate_method_bodies(ClassLayout& classLayout)
                 // 存储参数值到分配的空间
                 getIRBuilder().CreateStore(&arg, alloca);
                 
-                std::string paramType = "Object"; // 默认类型，实际应该从方法参数获取
+                std::string paramType = classLayout.name;
                 if (i > 0 && method->formals) {
                     int idx = i - 1;
                     for (int j = method->formals->first(); method->formals->more(j); j = method->formals->next(j)) {
@@ -1166,10 +1523,19 @@ void CodeGenerator::generate_method_bodies(ClassLayout& classLayout)
                 }
                 
                 getSymbolTable().currentScope()->addVariable(
-                    paramNames[i], 
-                    VariableInfo::createParam(alloca, classLayout.name, paramNames[i], paramType)
+                        paramNames[i], 
+                        VariableInfo::createParam(alloca, classLayout.name, paramNames[i], paramType)
                 );
+                if (i == 0) {
+                    thisAlloca = alloca;
+                }
                 i++;
+            }
+            if (thisAlloca != nullptr) {
+                getSymbolTable().currentScope()->addVariable(
+                    "self",
+                    VariableInfo::createParam(thisAlloca, classLayout.name, "self", classLayout.name)
+                );
             }
             
             // 生成方法体
@@ -1194,6 +1560,7 @@ void CodeGenerator::generate_method_bodies(ClassLayout& classLayout)
             }
             
             // 退出方法作用域
+            getSymbolTable().exitMethod();
             getSymbolTable().exitScope();
             
             #ifdef DEBUG
@@ -2043,23 +2410,22 @@ void CodeGenerator::generate_constructor(ClassLayout& classLayout)
         }
     }
     
-    // 设置vptr（如果是根类且有虚函数）
-    if (classLayout.parentName.empty() && hasVirtualFunctions) {
-        // vptr在索引0
-        llvm::Value* vptrPtr = getIRBuilder().CreateStructGEP(
-            classLayout.type,
+    // 单继承模型下，每一层构造完成后都需要把对象头部的 vptr
+    // 更新为当前类的虚表，而不仅仅是根类。
+    if (hasVirtualFunctions) {
+        llvm::Type* i8PtrTy = llvm::Type::getInt8PtrTy(_context.getLLVMContext());
+        llvm::Value* vptrPtr = getIRBuilder().CreateBitCast(
             thisPtr,
-            0,
+            i8PtrTy->getPointerTo(),
             "vptr.ptr"
         );
         
-        // 获取虚表指针
         llvm::Value* vtablePtr = getIRBuilder().CreateBitCast(
             classLayout.vtable,
-            llvm::PointerType::get(llvm::Type::getInt8Ty(_context.getLLVMContext()), 0)
+            i8PtrTy,
+            "vtable.ptr"
         );
         
-        // 存储vptr
         getIRBuilder().CreateStore(vtablePtr, vptrPtr);
     }
     
@@ -2381,63 +2747,7 @@ llvm::Value *CodeGenerator::emit_assign_class(assign_class* expression)
     {
         case StorageClass::MEMBER:
         {
-            llvm::Value* thisPtr = getSymbolTable().getCurrentThisPointer();
-            if (!thisPtr) {
-                #ifdef DEBUG
-                std::cerr << "Error: No this pointer available for member access" << std::endl;
-                #endif
-                return nullptr;
-            }
-            
-            llvm::Type* classType = getSymbolTable().getCurrentClassType();
-            if (!classType) {
-                #ifdef DEBUG
-                std::cerr << "Error: Cannot get current class type" << std::endl;
-                #endif
-                return nullptr;
-            }
-            
-            // 调试：输出类型信息
-            #ifdef DEBUG
-            std::cerr << "classType: ";
-            classType->print(llvm::errs());
-            std::cerr << std::endl;
-            std::cerr << "thisPtr type: ";
-            thisPtr->getType()->print(llvm::errs());
-            std::cerr << std::endl;
-            std::cerr << "offset: " << varInfo->offset << std::endl;
-            #endif
-            
-            // 检查 classType 是否是结构体
-            if (!classType->isStructTy()) {
-                #ifdef DEBUG
-                std::cerr << "Error: classType is not a structure type!" << std::endl;
-                #endif
-                return nullptr;
-            }
-            
-            // 获取结构体中的元素数量
-            llvm::StructType* structType = llvm::cast<llvm::StructType>(classType);
-            #ifdef DEBUG
-            std::cerr << "Struct has " << structType->getNumElements() << " elements" << std::endl;
-            #endif
-            
-            // 确保偏移量在范围内
-            if (varInfo->offset >= structType->getNumElements()) {
-                #ifdef DEBUG
-                std::cerr << "Error: Offset out of range!" << std::endl;
-                #endif
-                return nullptr;
-            }
-            
-            // 创建索引
-            std::vector<llvm::Value*> indices = {
-                getIRBuilder().getInt32(0),
-                getIRBuilder().getInt32(varInfo->offset)
-            };
-            
-            ptr = getIRBuilder().CreateGEP(classType, thisPtr, indices,
-                                        std::string(expression->name->get_string()) + ".ptr");
+            ptr = get_member_address(*this, *varInfo);
             break;
         }
         default:
@@ -2484,21 +2794,23 @@ llvm::Value *CodeGenerator::emit_static_dispatch_class(static_dispatch_class* ex
     
     // 3. 生成所有实际参数
     Expressions body = expression->actual;
-    if (body == nullptr) return nullptr;
-
     std::vector<llvm::Value*> args;
-    for (int i = body->first(); body->more(i); i = body->next(i)) {
-        llvm::Value* arg = emit_expression(body->nth(i));
-        if (arg == nullptr) return nullptr;
-        args.push_back(arg);
+    if (body != nullptr) {
+        for (int i = body->first(); body->more(i); i = body->next(i)) {
+            llvm::Value* arg = emit_expression(body->nth(i));
+            if (arg == nullptr) return nullptr;
+            args.push_back(arg);
+        }
     }
     
-    // 4. 获取方法函数（直接通过模块查找）
-    std::string function_name = type_name_str + "." + method_name;
-    llvm::Function* method_func = getSymbolTable().findMethod(type_name_str, function_name);
+    // 4. 获取方法函数
+    llvm::Function* method_func = getSymbolTable().findMethod(type_name_str, method_name);
+    if (method_func == nullptr) {
+        method_func = find_builtin_method_in_hierarchy(*this, getSymbolTable(), type_name_str, method_name);
+    }
     if (method_func == nullptr) {
         #ifdef DEBUG
-        std::cerr << "Error: function not found " << function_name << std::endl;
+        std::cerr << "Error: function not found " << type_name_str << "." << method_name << std::endl;
         #endif
         return nullptr;
     }
@@ -2511,7 +2823,8 @@ llvm::Value *CodeGenerator::emit_static_dispatch_class(static_dispatch_class* ex
     // 6. 验证参数数量
     if (call_args.size() != method_func->arg_size()) {
         #ifdef DEBUG
-        std::cerr << "Error: argument count mismatch for " << function_name << std::endl;
+        std::cerr << "Error: argument count mismatch for "
+                  << type_name_str << "." << method_name << std::endl;
         #endif
         return nullptr;
     }
@@ -2536,26 +2849,43 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
     llvm::Value *obj_ptr = emit_expression(expression->expr);
     if (obj_ptr == nullptr) return nullptr;
     
-    // 2. 获取虚表指针
-    // 需要提供类型参数给CreateLoad
-    llvm::Type *vtable_ptr_type = llvm::PointerType::get(_context.getLLVMContext(), 0);    
-    llvm::Value *vtable_ptr = builder.CreateLoad(
-        vtable_ptr_type, 
-        obj_ptr, 
-        "vtable.ptr"
-    );
-    
-    // 3. 获取方法名对应的符号
+    // 2. 获取方法名对应的符号
     std::string method_name = expression->name->get_string();
     
-    // 4. 从对象类型中获取类名
-    std::string class_name = getSymbolTable().getCoolTypeForLLVMType(obj_ptr->getType());
+    // 3. 从表达式静态类型推断接收者类，而不是从 LLVM 的 opaque ptr 反推
+    std::string class_name = normalize_cool_type(getSymbolTable(), infer_expression_type(expression->expr, *this));
     #ifdef DEBUG
-    std::cout << "Object pointer LLVM type: ";
-    obj_ptr->getType()->print(llvm::errs());
-    std::cout << std::endl;
     std::cout << "Resolved Cool class name: " << class_name << std::endl;
     #endif
+
+    // 基本类型直接调用运行时内建函数，不能走对象虚表。
+    if (is_primitive_cool_type(class_name)) {
+        llvm::Function* builtinFunc = find_builtin_method_in_hierarchy(*this, getSymbolTable(), class_name, method_name);
+        if (builtinFunc == nullptr) {
+            return nullptr;
+        }
+
+        std::vector<llvm::Value*> args;
+        args.push_back(obj_ptr);
+        if (expression->actual != nullptr) {
+            for (int i = expression->actual->first(); expression->actual->more(i); i = expression->actual->next(i)) {
+                llvm::Value* arg = emit_expression(expression->actual->nth(i));
+                if (arg == nullptr) return nullptr;
+                args.push_back(arg);
+            }
+        }
+
+        return builder.CreateCall(builtinFunc, args, "dispatch.result");
+    }
+
+    // 4. 获取虚表指针
+    llvm::Type *vtable_ptr_type = llvm::PointerType::get(_context.getLLVMContext(), 0);
+    llvm::Value *vtable_ptr = builder.CreateLoad(
+        vtable_ptr_type,
+        obj_ptr,
+        "vtable.ptr"
+    );
+
     // 5. 在类层次结构中查找方法信息（包括父类）
     int method_index = -1;
     std::string defining_class;
@@ -2650,25 +2980,24 @@ llvm::Value *CodeGenerator::emit_cond_class(cond_class* expression)
 
     llvm::Function* current_function = getIRBuilder().GetInsertBlock()->getParent();
     llvm::Value* pred_value = emit_expression(expression->pred);
+    if (pred_value == nullptr) {
+        return nullptr;
+    }
 
-    // 确保条件值是布尔类型
     if (!pred_value->getType()->isIntegerTy(1)) {
         if (pred_value->getType()->isIntegerTy()) {
-            // 整数类型：比较是否不等于0
-            llvm::Value* zero = llvm::ConstantInt::get(pred_value->getType(), 0);
-            pred_value = getIRBuilder().CreateICmpNE(pred_value, zero, "bool_cmp");
-        } else if (pred_value->getType()->isPointerTy()) {
-            // 指针类型：比较是否不等于nullptr
-            llvm::Value* null_ptr = llvm::ConstantPointerNull::get(
-                static_cast<llvm::PointerType*>(pred_value->getType())
+            pred_value = getIRBuilder().CreateICmpNE(
+                pred_value,
+                llvm::ConstantInt::get(pred_value->getType(), 0),
+                "bool_cmp"
             );
-            pred_value = getIRBuilder().CreateICmpNE(pred_value, null_ptr, "ptr_cmp");
-        } else if (pred_value->getType()->isFloatingPointTy()) {
-            // 浮点类型：比较是否不等于0.0
-            llvm::Value* zero_float = llvm::ConstantFP::get(pred_value->getType(), 0.0);
-            pred_value = getIRBuilder().CreateFCmpONE(pred_value, zero_float, "float_cmp");
+        } else if (pred_value->getType()->isPointerTy()) {
+            pred_value = getIRBuilder().CreateICmpNE(
+                pred_value,
+                llvm::ConstantPointerNull::get(static_cast<llvm::PointerType*>(pred_value->getType())),
+                "ptr_cmp"
+            );
         } else {
-            // 其他类型：尝试转换为i1
             pred_value = getIRBuilder().CreateICmpNE(
                 getIRBuilder().CreatePtrToInt(pred_value, llvm::Type::getInt64Ty(_context.getLLVMContext())),
                 llvm::ConstantInt::get(llvm::Type::getInt64Ty(_context.getLLVMContext()), 0),
@@ -2676,191 +3005,71 @@ llvm::Value *CodeGenerator::emit_cond_class(cond_class* expression)
             );
         }
     }
-    
-    // 2. 创建基本块
+
     llvm::BasicBlock* then_block = llvm::BasicBlock::Create(_context.getLLVMContext(), "then", current_function);
     llvm::BasicBlock* else_block = llvm::BasicBlock::Create(_context.getLLVMContext(), "else");
     llvm::BasicBlock* merge_block = llvm::BasicBlock::Create(_context.getLLVMContext(), "ifcont");
-    
-    // 3. 创建条件分支
     getIRBuilder().CreateCondBr(pred_value, then_block, else_block);
-    
-    // 4. 生成 then 分支
+
     getIRBuilder().SetInsertPoint(then_block);
     llvm::Value* then_value = emit_expression(expression->then_exp);
-    
-    // 检查 then 分支是否已经终止（例如包含 return 语句）
-    bool then_terminated = getIRBuilder().GetInsertBlock()->getTerminator() != nullptr;
+    llvm::BasicBlock* then_end_block = getIRBuilder().GetInsertBlock();
+    bool then_terminated = then_end_block->getTerminator() != nullptr;
     if (!then_terminated) {
         getIRBuilder().CreateBr(merge_block);
     }
-    
-    // 保存 then 分支的结束基本块
-    llvm::BasicBlock* then_end_block = getIRBuilder().GetInsertBlock();
-    
-    // 5. 生成 else 分支
+
     else_block->insertInto(current_function);
     getIRBuilder().SetInsertPoint(else_block);
     llvm::Value* else_value = emit_expression(expression->else_exp);
-    
-    // 检查 else 分支是否已经终止
-    bool else_terminated = getIRBuilder().GetInsertBlock()->getTerminator() != nullptr;
+    llvm::BasicBlock* else_end_block = getIRBuilder().GetInsertBlock();
+    bool else_terminated = else_end_block->getTerminator() != nullptr;
     if (!else_terminated) {
         getIRBuilder().CreateBr(merge_block);
     }
-    
-    // 保存 else 分支的结束基本块
-    llvm::BasicBlock* else_end_block = getIRBuilder().GetInsertBlock();
-    
-    // 6. 添加 merge 块到函数
+
     merge_block->insertInto(current_function);
     getIRBuilder().SetInsertPoint(merge_block);
-    
-    // 7. 处理返回值（创建 phi 节点）
-    if (!then_terminated && !else_terminated) {
-        // 确保两个分支都有返回值
-        if (then_value == nullptr || else_value == nullptr) {
-            // 如果其中一个分支没有返回值，检查是否是 void 类型
-            if (then_value == nullptr && else_value == nullptr) {
-                // 两个分支都是 void，返回 nullptr
-                return nullptr;
-            } else {
-                // 一个分支有返回值，另一个没有，这是类型错误
-                llvm::errs() << "Error: Mismatched return types in conditional expression\n";
-                return nullptr;
-            }
-        }
-        
-        // 获取类型
-        llvm::Type* then_type = then_value->getType();
-        llvm::Type* else_type = else_value->getType();
-        
-        // 如果类型已经相同，直接创建 PHI 节点
-        if (then_type == else_type) {
-            llvm::PHINode* phi_node = getIRBuilder().CreatePHI(then_type, 2, "cond_result");
-            phi_node->addIncoming(then_value, then_end_block);
-            phi_node->addIncoming(else_value, else_end_block);
-            return phi_node;
-        }
-        
-        // 类型不同，需要进行类型转换
-        llvm::Value* phi_value = nullptr;
-        
-        // 情况1：整数类型转换
-        if (then_type->isIntegerTy() && else_type->isIntegerTy()) {
-            unsigned then_bits = then_type->getIntegerBitWidth();
-            unsigned else_bits = else_type->getIntegerBitWidth();
-            
-            // 选择较大的类型
-            if (then_bits >= else_bits) {
-                // 扩展 else_value
-                else_value = getIRBuilder().CreateIntCast(else_value, then_type, true, "intcast_else");
-                phi_value = then_value;
-                llvm::Type* phi_type = then_type;
-            } else {
-                // 扩展 then_value
-                then_value = getIRBuilder().CreateIntCast(then_value, else_type, true, "intcast_then");
-                phi_value = else_value;
-                llvm::Type* phi_type = else_type;
-            }
-        }
-        // 情况2：浮点类型转换
-        else if (then_type->isFloatingPointTy() && else_type->isFloatingPointTy()) {
-            // 选择精度更高的类型
-            if (then_type->isDoubleTy() || else_type->isDoubleTy()) {
-                // 转换为 double
-                llvm::Type* double_type = llvm::Type::getDoubleTy(_context.getLLVMContext());
-                if (!then_type->isDoubleTy()) {
-                    then_value = getIRBuilder().CreateFPCast(then_value, double_type, "fpcast_then");
-                }
-                if (!else_type->isDoubleTy()) {
-                    else_value = getIRBuilder().CreateFPCast(else_value, double_type, "fpcast_else");
-                }
-                phi_value = then_value;
-                llvm::Type* phi_type = double_type;
-            } else {
-                // 都是 float，保持原样
-                phi_value = then_value;
-                llvm::Type* phi_type = then_type;
-            }
-        }
-        // 情况3：整数转浮点
-        else if (then_type->isIntegerTy() && else_type->isFloatingPointTy()) {
-            // 整数转换为浮点
-            then_value = getIRBuilder().CreateSIToFP(then_value, else_type, "sitofp_then");
-            phi_value = else_value;
-            llvm::Type* phi_type = else_type;
-        }
-        // 情况4：浮点转整数
-        else if (then_type->isFloatingPointTy() && else_type->isIntegerTy()) {
-            // 整数转换为浮点
-            else_value = getIRBuilder().CreateSIToFP(else_value, then_type, "sitofp_else");
-            phi_value = then_value;
-            llvm::Type* phi_type = then_type;
-        }
-        // 情况5：指针类型
-        else if (then_type->isPointerTy() && else_type->isPointerTy()) {
-            // 检查指针类型是否兼容
-            // 简化处理：转换为 void* 指针
-            llvm::Type* void_ptr_type = llvm::PointerType::get(llvm::Type::getInt8Ty(_context.getLLVMContext()), 0);
-            then_value = getIRBuilder().CreatePointerCast(then_value, void_ptr_type, "ptrcast_then");
-            else_value = getIRBuilder().CreatePointerCast(else_value, void_ptr_type, "ptrcast_else");
-            phi_value = then_value;
-            llvm::Type* phi_type = void_ptr_type;
-        }
-        // 其他情况：尝试通用转换
-        else {
-            // 尝试将两者都转换为 i64
-            llvm::Type* i64_type = llvm::Type::getInt64Ty(_context.getLLVMContext());
-            
-            if (then_type->isIntegerTy()) {
-                then_value = getIRBuilder().CreateIntCast(then_value, i64_type, true, "generic_intcast_then");
-            } else if (then_type->isFloatingPointTy()) {
-                then_value = getIRBuilder().CreateFPToSI(then_value, i64_type, "generic_fptosi_then");
-            } else if (then_type->isPointerTy()) {
-                then_value = getIRBuilder().CreatePtrToInt(then_value, i64_type, "generic_ptrtoint_then");
-            }
-            
-            if (else_type->isIntegerTy()) {
-                else_value = getIRBuilder().CreateIntCast(else_value, i64_type, true, "generic_intcast_else");
-            } else if (else_type->isFloatingPointTy()) {
-                else_value = getIRBuilder().CreateFPToSI(else_value, i64_type, "generic_fptosi_else");
-            } else if (else_type->isPointerTy()) {
-                else_value = getIRBuilder().CreatePtrToInt(else_value, i64_type, "generic_ptrtoint_else");
-            }
-            
-            phi_value = then_value;
-            llvm::Type* phi_type = i64_type;
-        }
-        
-        // 再次检查类型是否一致
-        if (then_value->getType() != else_value->getType()) {
-            llvm::errs() << "Error: Failed to unify types in conditional expression\n";
-            llvm::errs() << "  then type: ";
-            then_value->getType()->print(llvm::errs());
-            llvm::errs() << "\n  else type: ";
-            else_value->getType()->print(llvm::errs());
-            llvm::errs() << "\n";
-            return nullptr;
-        }
-        
-        // 创建 PHI 节点
-        llvm::PHINode* phi_node = getIRBuilder().CreatePHI(then_value->getType(), 2, "cond_result");
-        phi_node->addIncoming(then_value, then_end_block);
-        phi_node->addIncoming(else_value, else_end_block);
-        
-        return phi_node;
-        
-    } else if (then_terminated && !else_terminated) {
-        // then 分支已经终止，不需要 phi 节点
-        return else_value;
-    } else if (!then_terminated && else_terminated) {
-        // else 分支已经终止，不需要 phi 节点
-        return then_value;
-    } else {
-        // 两个分支都已经终止（例如都有 return 语句）
+
+    if (then_terminated && else_terminated) {
         return nullptr;
     }
+    if (then_terminated) {
+        return else_value;
+    }
+    if (else_terminated) {
+        return then_value;
+    }
+    if (then_value == nullptr || else_value == nullptr) {
+        return nullptr;
+    }
+
+    std::string resultCoolType = infer_expression_type(expression, *this);
+    llvm::Type* mergeType = nullptr;
+    if (!resultCoolType.empty()) {
+        mergeType = map_cool_type(*this, resultCoolType);
+    }
+    if (mergeType == nullptr) {
+        if (then_value->getType() == else_value->getType()) {
+            mergeType = then_value->getType();
+        } else if (then_value->getType()->isPointerTy() && else_value->getType()->isPointerTy()) {
+            mergeType = llvm::Type::getInt8PtrTy(_context.getLLVMContext())->getPointerTo();
+        } else {
+            mergeType = then_value->getType();
+        }
+    }
+
+    then_value = coerce_value_to_type(*this, then_value, mergeType, "cond_then_cast");
+    else_value = coerce_value_to_type(*this, else_value, mergeType, "cond_else_cast");
+
+    if (then_value->getType() != mergeType || else_value->getType() != mergeType) {
+        return nullptr;
+    }
+
+    llvm::PHINode* phi_node = getIRBuilder().CreatePHI(mergeType, 2, "cond_result");
+    phi_node->addIncoming(then_value, then_end_block);
+    phi_node->addIncoming(else_value, else_end_block);
+    return phi_node;
 }
 
 llvm::Value *CodeGenerator::emit_loop_class(loop_class* expression)
@@ -2900,14 +3109,145 @@ llvm::Value *CodeGenerator::emit_typcase_class(typcase_class* expression)
     #endif
     if (expression == nullptr) return nullptr;
 
-   llvm::Value* expr_value = emit_expression(expression->expr);
-//    Cases cases = expression->cases;
-//    for(int i = cases->first(); cases->more(i); i = cases->next(i))
-//    {
-//       llvm::Value* case_value = emit_expression(cases->nth(i));
-//    }
-   //如何实现
-   return nullptr;
+    llvm::IRBuilder<>& builder = getIRBuilder();
+    llvm::Function* currentFunction = builder.GetInsertBlock()->getParent();
+    llvm::Value* exprValue = emit_expression(expression->expr);
+    if (exprValue == nullptr) {
+        return nullptr;
+    }
+
+    Cases cases = expression->cases;
+    if (cases == nullptr) {
+        return nullptr;
+    }
+
+    struct CaseInfo {
+        branch_class* branch;
+        int depth;
+    };
+
+    std::vector<CaseInfo> branchInfos;
+    for (int i = cases->first(); cases->more(i); i = cases->next(i)) {
+        auto* branch = dynamic_cast<branch_class*>(cases->nth(i));
+        if (!branch) {
+            continue;
+        }
+        int depth = static_cast<int>(getSymbolTable().getInheritanceChain(branch->type_decl->get_string()).size());
+        branchInfos.push_back({branch, depth});
+    }
+
+    std::sort(branchInfos.begin(), branchInfos.end(), [](const CaseInfo& lhs, const CaseInfo& rhs) {
+        return lhs.depth > rhs.depth;
+    });
+
+    llvm::Type* i8PtrTy = llvm::Type::getInt8PtrTy(_context.getLLVMContext());
+    llvm::Value* vptrPtr = builder.CreateBitCast(exprValue, i8PtrTy->getPointerTo(), "case.vptr.ptr");
+    llvm::Value* objectVptr = builder.CreateLoad(i8PtrTy, vptrPtr, "case.vptr");
+
+    llvm::BasicBlock* mergeBlock = llvm::BasicBlock::Create(_context.getLLVMContext(), "case.end");
+    std::vector<std::pair<llvm::BasicBlock*, llvm::Value*>> incoming;
+
+    llvm::BasicBlock* currentTestBlock = builder.GetInsertBlock();
+    for (size_t index = 0; index < branchInfos.size(); ++index) {
+        branch_class* branch = branchInfos[index].branch;
+        std::string branchType = branch->type_decl->get_string();
+
+        llvm::BasicBlock* matchBlock = llvm::BasicBlock::Create(_context.getLLVMContext(), "case.match", currentFunction);
+        llvm::BasicBlock* nextBlock = (index + 1 < branchInfos.size())
+            ? llvm::BasicBlock::Create(_context.getLLVMContext(), "case.next")
+            : nullptr;
+
+        builder.SetInsertPoint(currentTestBlock);
+
+        llvm::Value* branchMatch = nullptr;
+        for (const auto& [className, classLayout] : getSymbolTable().classRegistry) {
+            auto chain = getSymbolTable().getInheritanceChain(className);
+            bool compatible = std::any_of(chain.begin(), chain.end(), [&](ClassLayout* cls) {
+                return cls && cls->name == branchType;
+            });
+
+            if (!compatible || classLayout.vtable == nullptr) {
+                continue;
+            }
+
+            llvm::Value* candidateVptr = builder.CreateBitCast(classLayout.vtable, i8PtrTy, className + ".vptr");
+            llvm::Value* exactMatch = builder.CreateICmpEQ(objectVptr, candidateVptr, className + ".match");
+            branchMatch = branchMatch ? builder.CreateOr(branchMatch, exactMatch, "case.or") : exactMatch;
+        }
+
+        if (branchMatch == nullptr) {
+            branchMatch = llvm::ConstantInt::getFalse(_context.getLLVMContext());
+        }
+
+        if (nextBlock != nullptr) {
+            builder.CreateCondBr(branchMatch, matchBlock, nextBlock);
+        } else {
+            llvm::BasicBlock* abortBlock = llvm::BasicBlock::Create(_context.getLLVMContext(), "case.abort", currentFunction);
+            builder.CreateCondBr(branchMatch, matchBlock, abortBlock);
+            builder.SetInsertPoint(abortBlock);
+            if (llvm::Function* abortFunc = getModule().getFunction("abort")) {
+                builder.CreateCall(abortFunc, {});
+            }
+            builder.CreateUnreachable();
+        }
+
+        builder.SetInsertPoint(matchBlock);
+        getSymbolTable().enterScope();
+        llvm::AllocaInst* branchSlot = builder.CreateAlloca(exprValue->getType(), nullptr, std::string(branch->name->get_string()) + ".addr");
+        builder.CreateStore(exprValue, branchSlot);
+        getSymbolTable().currentScope()->addVariable(
+            branch->name->get_string(),
+            VariableInfo::createParam(branchSlot, getSymbolTable().getCurrentClassName(), branch->name->get_string(), branchType)
+        );
+        llvm::Value* branchResult = emit_expression(branch->expr);
+        getSymbolTable().exitScope();
+
+        if (builder.GetInsertBlock()->getTerminator() == nullptr) {
+            builder.CreateBr(mergeBlock);
+        }
+        incoming.push_back({builder.GetInsertBlock(), branchResult});
+
+        if (nextBlock != nullptr) {
+            nextBlock->insertInto(currentFunction);
+            currentTestBlock = nextBlock;
+        }
+    }
+
+    mergeBlock->insertInto(currentFunction);
+    builder.SetInsertPoint(mergeBlock);
+
+    std::string resultCoolType = infer_expression_type(expression, *this);
+    llvm::Type* phiType = nullptr;
+    if (!resultCoolType.empty()) {
+        phiType = map_cool_type(*this, resultCoolType);
+    }
+    if (phiType == nullptr) {
+        for (const auto& [block, value] : incoming) {
+            if (value != nullptr) {
+                phiType = value->getType();
+                break;
+            }
+        }
+    }
+
+    if (phiType == nullptr) {
+        return llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(_context.getLLVMContext()));
+    }
+
+    llvm::PHINode* phi = builder.CreatePHI(phiType, static_cast<unsigned>(incoming.size()), "case.result");
+    for (const auto& [block, value] : incoming) {
+        llvm::Value* incomingValue = value;
+        if (incomingValue == nullptr) {
+            incomingValue = phiType->isPointerTy()
+                ? static_cast<llvm::Value*>(llvm::ConstantPointerNull::get(static_cast<llvm::PointerType*>(phiType)))
+                : static_cast<llvm::Value*>(llvm::Constant::getNullValue(phiType));
+        } else {
+            incomingValue = coerce_value_to_type(*this, incomingValue, phiType, "case_cast");
+        }
+        phi->addIncoming(incomingValue, block);
+    }
+
+    return phi;
 }
 
 llvm::Value *CodeGenerator::emit_block_class(block_class* expression)
@@ -3040,6 +3380,8 @@ llvm::Value* CodeGenerator::emit_eq_class(eq_class* expression) {
 
     llvm::Value* left_val = emit_expression(expression->e1);
     llvm::Value* right_val = emit_expression(expression->e2);
+    std::string leftType = infer_expression_type(expression->e1, *this);
+    std::string rightType = infer_expression_type(expression->e2, *this);
 
     #ifdef DEBUG
     std::cerr << "[DEBUG] Equality comparison types:" << std::endl;
@@ -3058,6 +3400,13 @@ llvm::Value* CodeGenerator::emit_eq_class(eq_class* expression) {
         std::cerr << ")" << std::endl;
     }
     #endif
+
+    if (leftType == "String" && rightType == "String") {
+        llvm::Function* stringEquals = find_builtin_method_in_hierarchy(*this, getSymbolTable(), "String", "equals");
+        if (stringEquals != nullptr) {
+            return getIRBuilder().CreateCall(stringEquals, {left_val, right_val}, "eqtmp");
+        }
+    }
 
     return getIRBuilder().CreateICmpEQ(left_val, right_val, "eqtmp");
 }
@@ -3197,12 +3546,30 @@ llvm::Value* CodeGenerator::emit_object_class(object_class* expression) {
 
     VariableInfo* varInfo = findVariable(expression->name->get_string());
     if (!varInfo || !varInfo->value) {
+        if (varInfo && varInfo->storage == StorageClass::MEMBER) {
+            llvm::Value* fieldAddr = get_member_address(*this, *varInfo);
+            if (fieldAddr != nullptr) {
+                return getIRBuilder().CreateLoad(
+                    mapCoolTypeToLLVM(varInfo->typeName),
+                    fieldAddr,
+                    expression->name->get_string()
+                );
+            }
+        }
         #ifdef DEBUG
         std::cout << "VariableInfo not found" << std::endl;
         #endif
         return nullptr;
     }
-    // std::cout << varInfo->typeName << std::endl;
+
+    if (varInfo->storage == StorageClass::MEMBER) {
+        llvm::Value* fieldAddr = get_member_address(*this, *varInfo);
+        if (fieldAddr == nullptr) {
+            return nullptr;
+        }
+        return getIRBuilder().CreateLoad(mapCoolTypeToLLVM(varInfo->typeName), fieldAddr, expression->name->get_string());
+    }
+
     return getIRBuilder().CreateLoad(mapCoolTypeToLLVM(varInfo->typeName), varInfo->value, expression->name->get_string());
 }
 
@@ -3322,14 +3689,15 @@ llvm::Function* CodeGenerator::createMainFunction()
     llvm::BasicBlock* bb = llvm::BasicBlock::Create(getContext().getLLVMContext(), "entry", main_func);
     getIRBuilder().SetInsertPoint(bb);
     
-    // 获取 Main.main 方法并直接调用
+    // Main.main 是实例方法，需要先构造 Main 对象再调用。
     llvm::Function* main_method = getModule().getFunction("Main.main");
-    if (main_method != nullptr) {
-        // 直接调用 Main.main()
-        getIRBuilder().CreateCall(main_method);
+    ClassLayout* main_layout = getSymbolTable().findClass("Main");
+    if (main_method != nullptr && main_layout != nullptr && main_layout->newFunc != nullptr) {
+        llvm::Value* main_obj = getIRBuilder().CreateCall(main_layout->newFunc, {}, "main.obj");
+        getIRBuilder().CreateCall(main_method, {main_obj});
     } else {
         #ifdef DEBUG
-        std::cerr << "Error: Main.main() not found" << std::endl;
+        std::cerr << "Error: Main bootstrap is incomplete" << std::endl;
         #endif
     }
     
