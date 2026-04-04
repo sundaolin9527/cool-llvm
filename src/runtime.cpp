@@ -114,6 +114,7 @@ void RuntimeAPI::declareCoolBuiltinFunctions() {
     // Object.abort() : Object
     llvm::FunctionType* objectAbortTy = llvm::FunctionType::get(objectPtrTy, {objectPtrTy}, false);
     coolFuncs.object_abort = llvm::Function::Create(objectAbortTy, llvm::Function::ExternalLinkage, "Object.abort", &_module);
+    coolFuncs.object_abort->addFnAttr(llvm::Attribute::NoReturn);
     
     // Object.type_name() : String
     llvm::FunctionType* objectTypeNameTy = llvm::FunctionType::get(stringTy, {objectPtrTy}, false);

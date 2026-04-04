@@ -17,6 +17,7 @@
 
 // AST 类型前向声明
 struct method_class;
+struct attr_class;
 
 // 方法类型
 enum MethodType {
@@ -144,6 +145,8 @@ struct ClassLayout {
     std::string parentName="";  // 父类名字
     llvm::StructType* type;     // 当前类的类型
     std::map<std::string, VariableInfo> ownAttributes; // 当前类自己的属性
+    std::vector<std::string> attributeOrder; // 属性声明顺序
+    std::map<std::string, attr_class*> attributeNodes; // 属性AST，供构造函数初始化使用
     std::vector<ClassMethodInfo> methods;  // 当前类自己的方法
     llvm::GlobalVariable* vtable;  // 当前类的虚表
     llvm::Function* constructor;   // 当前类的构造函数

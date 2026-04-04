@@ -347,6 +347,65 @@ llvm::Value* coerce_value_to_type(CodeGenerator& generator,
     return value;
 }
 
+llvm::Value* create_default_value(llvm::Type* type) {
+    if (type == nullptr) {
+        return nullptr;
+    }
+
+    if (type->isPointerTy()) {
+        return llvm::ConstantPointerNull::get(static_cast<llvm::PointerType*>(type));
+    }
+
+    if (type->isIntegerTy()) {
+        return llvm::ConstantInt::get(type, 0);
+    }
+
+    if (type->isFloatingPointTy()) {
+        return llvm::ConstantFP::get(type, 0.0);
+    }
+
+    return llvm::Constant::getNullValue(type);
+}
+
+void emit_runtime_abort(CodeGenerator& generator) {
+    llvm::Function* abortFunc = generator.getModule().getFunction("abort");
+    if (abortFunc == nullptr) {
+        abortFunc = generator.getRuntimeAPI().getAbort();
+    }
+    if (abortFunc != nullptr) {
+        generator.getIRBuilder().CreateCall(abortFunc, {});
+    }
+    generator.getIRBuilder().CreateUnreachable();
+}
+
+bool emit_null_receiver_guard(CodeGenerator& generator, llvm::Value* receiver, const std::string& blockPrefix) {
+    if (receiver == nullptr || !receiver->getType()->isPointerTy()) {
+        return false;
+    }
+    if (auto* constantReceiver = llvm::dyn_cast<llvm::Constant>(receiver)) {
+        if (!constantReceiver->isNullValue()) {
+            return false;
+        }
+    }
+
+    llvm::IRBuilder<>& builder = generator.getIRBuilder();
+    llvm::Function* currentFunction = builder.GetInsertBlock()->getParent();
+    llvm::BasicBlock* okBlock = llvm::BasicBlock::Create(generator.getContext().getLLVMContext(), blockPrefix + ".ok", currentFunction);
+    llvm::BasicBlock* abortBlock = llvm::BasicBlock::Create(generator.getContext().getLLVMContext(), blockPrefix + ".abort", currentFunction);
+    llvm::Value* isNull = builder.CreateICmpEQ(
+        receiver,
+        llvm::ConstantPointerNull::get(static_cast<llvm::PointerType*>(receiver->getType())),
+        blockPrefix + ".isnull"
+    );
+    builder.CreateCondBr(isNull, abortBlock, okBlock);
+
+    builder.SetInsertPoint(abortBlock);
+    emit_runtime_abort(generator);
+
+    builder.SetInsertPoint(okBlock);
+    return true;
+}
+
 }
 
 llvm::Type* CodeGenerator::mapCoolTypeToLLVM(const std::string& typeName) {
@@ -473,9 +532,7 @@ void CodeGenerator::buildObjectMethodMap(ClassMethodMaps& maps) {
     maps.virtualMethods = {
         {"copy", runtime.getObjectCopy()},
         {"abort", runtime.getObjectAbort()},
-        {"type_name", runtime.getObjectTypeName()},
-        {"toString", runtime.getObjectTypeName()},  // alias
-        {"clone", runtime.getObjectCopy()}           // alias
+        {"type_name", runtime.getObjectTypeName()}
     };
     
     // 静态方法映射 (Object 可能没有静态方法)
@@ -495,24 +552,11 @@ void CodeGenerator::buildIntMethodMap(ClassMethodMaps& maps) {
         {"times", runtime.getIntTimes()},
         {"divide", runtime.getIntDivide()},
         {"negate", runtime.getIntNegate()},
-        {"equals", runtime.getIntEquals()},
-        {"less", runtime.getIntLess()},
-        {"toDouble", nullptr},  // 需要自定义实现
-        {"toLong", nullptr}      // 需要自定义实现
+        {"equals", runtime.getIntEquals()}
     };
     
-    // 静态方法映射
-    maps.staticMethods = {
-        {"parseInt", nullptr}  // 静态工厂方法
-    };
-    
-    // 重写方法映射 (从Object继承的方法)
-    maps.overrideMethods = {
-        {"toString", nullptr},   // 需要自定义实现
-        {"hashCode", nullptr},   // 可以返回自身
-        {"equals", runtime.getIntEquals()},
-        {"clone", runtime.getObjectCopy()}
-    };
+    maps.staticMethods = {};
+    maps.overrideMethods = {};
 }
 
 void CodeGenerator::buildBoolMethodMap(ClassMethodMaps& maps) {
@@ -520,19 +564,11 @@ void CodeGenerator::buildBoolMethodMap(ClassMethodMaps& maps) {
     
     maps.virtualMethods = {
         {"not", runtime.getBoolNot()},
-        {"equals", runtime.getBoolEquals()},
-        {"logicalAnd", nullptr},
-        {"logicalOr", nullptr},
-        {"logicalNot", runtime.getBoolNot()}
+        {"equals", runtime.getBoolEquals()}
     };
     
     maps.staticMethods = {};
-    
-    maps.overrideMethods = {
-        {"toString", nullptr},
-        {"hashCode", nullptr},
-        {"equals", runtime.getBoolEquals()}
-    };
+    maps.overrideMethods = {};
 }
 
 void CodeGenerator::buildStringMethodMap(ClassMethodMaps& maps) {
@@ -542,27 +578,11 @@ void CodeGenerator::buildStringMethodMap(ClassMethodMaps& maps) {
         {"length", runtime.getStringLength()},
         {"concat", runtime.getStringConcat()},
         {"substr", runtime.getStringSubstr()},
-        {"substring", runtime.getStringSubstr()},
-        {"equals", runtime.getStringEquals()},
-        {"less", runtime.getStringLess()},
-        {"charAt", nullptr},
-        {"indexOf", nullptr},
-        {"toUpperCase", nullptr},
-        {"toLowerCase", nullptr},
-        {"trim", nullptr},
-        {"isEmpty", nullptr}
+        {"equals", runtime.getStringEquals()}
     };
     
-    maps.staticMethods = {
-        {"valueOf", nullptr}  // 静态工厂方法
-    };
-    
-    maps.overrideMethods = {
-        {"toString", nullptr},  // 返回自身
-        {"hashCode", nullptr},  // 需要计算哈希
-        {"equals", runtime.getStringEquals()},
-        {"clone", runtime.getObjectCopy()}
-    };
+    maps.staticMethods = {};
+    maps.overrideMethods = {};
 }
 
 void CodeGenerator::buildIOMethodMap(ClassMethodMaps& maps) {
@@ -576,7 +596,7 @@ void CodeGenerator::buildIOMethodMap(ClassMethodMaps& maps) {
     };
     
     maps.staticMethods = {};
-    maps.overrideMethods = {};  // IO 可能不重写 Object 的方法
+    maps.overrideMethods = {};
 }
 
 // ========== 注册类方法 ==========
@@ -745,6 +765,7 @@ void CodeGenerator::initObjectClass() {
     
     // Object 只有 vptr，没有其他属性！
     layout.ownAttributes = {};  // 清空，不添加 classTag 等
+    layout.attributeOrder = {};
     
     // Object 的方法
     layout.methods = {
@@ -772,6 +793,7 @@ void CodeGenerator::initIntClass() {
     layout.ownAttributes = {
         {"value", VariableInfo::createMember(nullptr, "Int", "value", "Int", 0)}
     };
+    layout.attributeOrder = {"value"};
     
     // Int 的方法（包含继承的和自己的）
     layout.methods = {
@@ -808,24 +830,15 @@ void CodeGenerator::initBoolClass() {
     layout.ownAttributes = {
         {"value", VariableInfo::createMember(nullptr, "Bool", "value", "Bool", 0)}
     };
+    layout.attributeOrder = {"value"};
     
     // Bool 类的方法
-    // 虚表索引：0-3 被 Object 占用，4+ 是 Bool 自己的方法
     layout.methods = {
-        // 继承自 Object 的方法（重写）
-        {"toString", METHOD_OVERRIDE, nullptr, nullptr, 0},
-        {"hashCode", METHOD_OVERRIDE, nullptr, nullptr, 1},
-        {"equals", METHOD_OVERRIDE, nullptr, nullptr, 2},
-        {"clone", METHOD_OVERRIDE, nullptr, nullptr, 3},
-        
-        // Bool 自己的虚方法
-        {"not", METHOD_VIRTUAL, nullptr, nullptr, 4},
-        {"and", METHOD_VIRTUAL, nullptr, nullptr, 5},
-        {"or", METHOD_VIRTUAL, nullptr, nullptr, 6},
-        {"xor", METHOD_VIRTUAL, nullptr, nullptr, 7},
-        {"logicalAnd", METHOD_VIRTUAL, nullptr, nullptr, 8},
-        {"logicalOr", METHOD_VIRTUAL, nullptr, nullptr, 9},
-        {"logicalNot", METHOD_VIRTUAL, nullptr, nullptr, 10}
+        {"copy", METHOD_VIRTUAL, nullptr, nullptr, 0},
+        {"abort", METHOD_VIRTUAL, nullptr, nullptr, 1},
+        {"type_name", METHOD_VIRTUAL, nullptr, nullptr, 2},
+        {"equals", METHOD_VIRTUAL, nullptr, nullptr, 3},
+        {"not", METHOD_VIRTUAL, nullptr, nullptr, 4}
     };
     
     _symbolTable.registerClass(layout);
@@ -872,33 +885,17 @@ void CodeGenerator::initStringClass() {
             2
         )}
     };
+    layout.attributeOrder = {"data", "length", "hash"};
     
     // String 类的方法
     layout.methods = {
-        // 继承自 Object 的方法（重写）
-        {"toString", METHOD_OVERRIDE, nullptr, nullptr, 0},
-        {"hashCode", METHOD_OVERRIDE, nullptr, nullptr, 1},
-        {"equals", METHOD_OVERRIDE, nullptr, nullptr, 2},
-        {"clone", METHOD_OVERRIDE, nullptr, nullptr, 3},
-        
-        // String 自己的虚方法
+        {"copy", METHOD_VIRTUAL, nullptr, nullptr, 0},
+        {"abort", METHOD_VIRTUAL, nullptr, nullptr, 1},
+        {"type_name", METHOD_VIRTUAL, nullptr, nullptr, 2},
+        {"equals", METHOD_VIRTUAL, nullptr, nullptr, 3},
         {"length", METHOD_VIRTUAL, nullptr, nullptr, 4},
         {"concat", METHOD_VIRTUAL, nullptr, nullptr, 5},
-        {"substr", METHOD_VIRTUAL, nullptr, nullptr, 6},
-        {"charAt", METHOD_VIRTUAL, nullptr, nullptr, 7},
-        {"indexOf", METHOD_VIRTUAL, nullptr, nullptr, 8},
-        {"lastIndexOf", METHOD_VIRTUAL, nullptr, nullptr, 9},
-        {"toUpperCase", METHOD_VIRTUAL, nullptr, nullptr, 10},
-        {"toLowerCase", METHOD_VIRTUAL, nullptr, nullptr, 11},
-        {"trim", METHOD_VIRTUAL, nullptr, nullptr, 12},
-        {"isEmpty", METHOD_VIRTUAL, nullptr, nullptr, 13},
-        {"compareTo", METHOD_VIRTUAL, nullptr, nullptr, 14},
-        {"startsWith", METHOD_VIRTUAL, nullptr, nullptr, 15},
-        {"endsWith", METHOD_VIRTUAL, nullptr, nullptr, 16},
-        
-        // 静态方法
-        {"valueOf", METHOD_STATIC, nullptr, nullptr, -1},
-        {"format", METHOD_STATIC, nullptr, nullptr, -1}
+        {"substr", METHOD_VIRTUAL, nullptr, nullptr, 6}
     };
     
     _symbolTable.registerClass(layout);
@@ -923,23 +920,17 @@ void CodeGenerator::initIOClass() {
     
     // IO 类没有自己的属性
     layout.ownAttributes = {};
+    layout.attributeOrder = {};
     
     // IO 类的方法
     layout.methods = {
-        // 继承自 Object 的方法（可能不重写）
-        {"toString", METHOD_VIRTUAL, nullptr, nullptr, 0},
-        {"hashCode", METHOD_VIRTUAL, nullptr, nullptr, 1},
-        {"equals", METHOD_VIRTUAL, nullptr, nullptr, 2},
-        {"clone", METHOD_VIRTUAL, nullptr, nullptr, 3},
-        
-        // IO 自己的虚方法
-        {"out_string", METHOD_VIRTUAL, nullptr, nullptr, 4},
-        {"out_int", METHOD_VIRTUAL, nullptr, nullptr, 5},
-        {"in_string", METHOD_VIRTUAL, nullptr, nullptr, 6},
-        {"in_int", METHOD_VIRTUAL, nullptr, nullptr, 7},
-        {"out_char", METHOD_VIRTUAL, nullptr, nullptr, 8},
-        {"in_char", METHOD_VIRTUAL, nullptr, nullptr, 9},
-        {"flush", METHOD_VIRTUAL, nullptr, nullptr, 10}
+        {"copy", METHOD_VIRTUAL, nullptr, nullptr, 0},
+        {"abort", METHOD_VIRTUAL, nullptr, nullptr, 1},
+        {"type_name", METHOD_VIRTUAL, nullptr, nullptr, 2},
+        {"out_string", METHOD_VIRTUAL, nullptr, nullptr, 3},
+        {"out_int", METHOD_VIRTUAL, nullptr, nullptr, 4},
+        {"in_string", METHOD_VIRTUAL, nullptr, nullptr, 5},
+        {"in_int", METHOD_VIRTUAL, nullptr, nullptr, 6}
     };
     
     _symbolTable.registerClass(layout);
@@ -1308,7 +1299,7 @@ llvm::Value *CodeGenerator::emit_class__class(class__class* _class)
     
     // 检查是否已生成该类
     ClassLayout *cls = symbol_table.findClass(className);
-    if (cls != nullptr && !cls->newFunc) {
+    if (cls != nullptr && cls->newFunc != nullptr) {
         return cls->newFunc;
     }
     
@@ -1546,15 +1537,16 @@ void CodeGenerator::generate_method_bodies(ClassLayout& classLayout)
             
             // 创建返回指令
             llvm::Type* returnType = func->getReturnType();
-            if (returnType->isVoidTy()) {
+            if (getIRBuilder().GetInsertBlock()->getTerminator() != nullptr) {
+                // 当前路径已终止（例如 abort），无需补返回。
+            } else if (returnType->isVoidTy()) {
                 getIRBuilder().CreateRetVoid();
             } else {
                 if (result == nullptr) {
-                    // 默认返回值
-                    result = llvm::Constant::getNullValue(returnType);
+                    result = create_default_value(returnType);
                 }
                 if (result->getType() != returnType) {
-                    result = getIRBuilder().CreateBitCast(result, returnType, "result");
+                    result = coerce_value_to_type(*this, result, returnType, "result");
                 }
                 getIRBuilder().CreateRet(result);
             }
@@ -1598,6 +1590,8 @@ ClassLayout CodeGenerator::collect_class_info(class__class* _class)
             std::string attrName = attr->name->get_string();
             std::string typeName = attr->type_decl->get_string();
             classLayout.ownAttributes.emplace(attrName, VariableInfo::createMember(nullptr, classLayout.name, attrName, typeName, offset));
+            classLayout.attributeOrder.push_back(attrName);
+            classLayout.attributeNodes[attrName] = attr;
             offset++;
         }
         else if (method_class *method = dynamic_cast<method_class*>(feature)) {
@@ -1647,8 +1641,8 @@ void CodeGenerator::build_memory_layout(ClassLayout& classLayout)
     }
     
     // 添加当前类自己的属性（数据成员）
-    for (const auto& attr : classLayout.ownAttributes) {
-        const VariableInfo& info = attr.second;
+    for (const auto& attrName : classLayout.attributeOrder) {
+        const VariableInfo& info = classLayout.ownAttributes.at(attrName);
         structFields.push_back(mapCoolTypeToLLVM(info.typeName));
     }
     
@@ -1676,13 +1670,13 @@ void CodeGenerator::build_memory_layout(ClassLayout& classLayout)
     }
     
     // 更新当前类数据成员的偏移
-    for (auto& attr : classLayout.ownAttributes) {
-        VariableInfo& info = attr.second;
+    for (const auto& attrName : classLayout.attributeOrder) {
+        VariableInfo& info = classLayout.ownAttributes[attrName];
         info.offset = layout->getElementOffset(fieldIndex++);
         info.className = classLayout.name;
         
         #ifdef DEBUG
-        std::cout << "  field " << attr.first 
+        std::cout << "  field " << attrName
                   << " offset = " << info.offset << std::endl;
         #endif
     }
@@ -1730,8 +1724,8 @@ size_t CodeGenerator::getFieldOffset(ClassLayout* classLayout, const std::string
  */
 std::string CodeGenerator::findFirstField(ClassLayout* classLayout)
 {
-    if (!classLayout->ownAttributes.empty()) {
-        return classLayout->ownAttributes.begin()->first;
+    if (!classLayout->attributeOrder.empty()) {
+        return classLayout->attributeOrder.front();
     }
     if (!classLayout->parentName.empty()) {
         SymbolTableManager& symbol_table = getSymbolTable();
@@ -2389,6 +2383,22 @@ void CodeGenerator::generate_constructor(ClassLayout& classLayout)
     
     llvm::Value* thisPtr = classLayout.constructor->arg_begin();
     thisPtr->setName("this");
+
+    symbol_table.enterClass(classLayout.name);
+    symbol_table.enterScope();
+
+    llvm::AllocaInst* thisAlloca = getIRBuilder().CreateAlloca(thisPtr->getType(), nullptr, "this.addr");
+    getIRBuilder().CreateStore(thisPtr, thisAlloca);
+    if (auto* scope = symbol_table.currentScope()) {
+        scope->addVariable(
+            "this",
+            VariableInfo::createParam(thisAlloca, classLayout.name, "this", classLayout.name)
+        );
+        scope->addVariable(
+            "self",
+            VariableInfo::createParam(thisAlloca, classLayout.name, "self", classLayout.name)
+        );
+    }
     
     // 判断类是否有虚函数
     bool hasVirtualFunctions = !classLayout.methods.empty();
@@ -2433,10 +2443,15 @@ void CodeGenerator::generate_constructor(ClassLayout& classLayout)
     unsigned fieldIndex = getFieldStartIndex(classLayout);
     unsigned i = 0;
     
-    for (auto& attr : classLayout.ownAttributes) {
-        if (attr.first == "self") continue;
+    for (const auto& attrName : classLayout.attributeOrder) {
+        if (attrName == "self") continue;
+
+        auto attrIt = classLayout.ownAttributes.find(attrName);
+        if (attrIt == classLayout.ownAttributes.end()) {
+            continue;
+        }
         
-        VariableInfo& varInfo = attr.second;
+        VariableInfo& varInfo = attrIt->second;
         llvm::Type* fieldType = mapCoolTypeToLLVM(varInfo.typeName);
         
         // 获取字段地址
@@ -2448,24 +2463,29 @@ void CodeGenerator::generate_constructor(ClassLayout& classLayout)
             "this.addr"
         );
         
-        // 初始化为默认值
-        if (fieldType->isIntegerTy(32)) {
-            getIRBuilder().CreateStore(
-                llvm::ConstantInt::get(llvm::Type::getInt32Ty(_context.getLLVMContext()), 0),
-                fieldAddr
-            );
-        } else if (fieldType->isIntegerTy(1)) {
-            getIRBuilder().CreateStore(
-                llvm::ConstantInt::getFalse(_context.getLLVMContext()),
-                fieldAddr
-            );
-        } else if (fieldType->isPointerTy()) {
-            getIRBuilder().CreateStore(
-                llvm::Constant::getNullValue(fieldType),
-                fieldAddr
-            );
+        auto attrNodeIt = classLayout.attributeNodes.find(attrName);
+        bool hasExplicitInit = attrNodeIt != classLayout.attributeNodes.end() &&
+            attrNodeIt->second != nullptr &&
+            attrNodeIt->second->init != nullptr &&
+            !dynamic_cast<no_expr_class*>(attrNodeIt->second->init);
+
+        if (!hasExplicitInit) {
+            getIRBuilder().CreateStore(create_default_value(fieldType), fieldAddr);
         }
-        
+
+        if (hasExplicitInit) {
+            llvm::Value* initValue = emit_expression(attrNodeIt->second->init);
+            if (getIRBuilder().GetInsertBlock()->getTerminator() != nullptr) {
+                symbol_table.exitScope();
+                symbol_table.exitClass();
+                return;
+            }
+            if (initValue != nullptr) {
+                initValue = coerce_value_to_type(*this, initValue, fieldType, attrName + ".init.cast");
+                getIRBuilder().CreateStore(initValue, fieldAddr);
+            }
+        }
+
         // 更新变量信息中的值（地址）
         varInfo.updateValue(fieldAddr);
         i++;
@@ -2481,6 +2501,8 @@ void CodeGenerator::generate_constructor(ClassLayout& classLayout)
     );
     
     getIRBuilder().CreateRetVoid();
+    symbol_table.exitScope();
+    symbol_table.exitClass();
 }
 
 /**
@@ -2787,6 +2809,8 @@ llvm::Value *CodeGenerator::emit_static_dispatch_class(static_dispatch_class* ex
     // 1. 生成对象表达式
     llvm::Value* object = emit_expression(expression->expr);
     if (object == nullptr) return nullptr;
+
+    emit_null_receiver_guard(*this, object, "static.dispatch");
     
     // 2. 获取声明类型名称和方法名称
     std::string type_name_str = expression->type_name->get_string();
@@ -2814,7 +2838,7 @@ llvm::Value *CodeGenerator::emit_static_dispatch_class(static_dispatch_class* ex
         #endif
         return nullptr;
     }
-    
+
     // 5. 准备调用参数（包括 this 指针）
     std::vector<llvm::Value*> call_args;
     call_args.push_back(object);
@@ -2826,6 +2850,12 @@ llvm::Value *CodeGenerator::emit_static_dispatch_class(static_dispatch_class* ex
         std::cerr << "Error: argument count mismatch for "
                   << type_name_str << "." << method_name << std::endl;
         #endif
+        return nullptr;
+    }
+    
+    if (method_name == "abort") {
+        getIRBuilder().CreateCall(method_func, call_args);
+        getIRBuilder().CreateUnreachable();
         return nullptr;
     }
     
@@ -2848,6 +2878,7 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
     // 1. 获取对象指针
     llvm::Value *obj_ptr = emit_expression(expression->expr);
     if (obj_ptr == nullptr) return nullptr;
+    emit_null_receiver_guard(*this, obj_ptr, "dispatch");
     
     // 2. 获取方法名对应的符号
     std::string method_name = expression->name->get_string();
@@ -2875,7 +2906,13 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
             }
         }
 
-        return builder.CreateCall(builtinFunc, args, "dispatch.result");
+        if (method_name == "abort") {
+            builder.CreateCall(builtinFunc, args);
+            builder.CreateUnreachable();
+            return nullptr;
+        }
+        llvm::Value* result = builder.CreateCall(builtinFunc, args, "dispatch.result");
+        return result;
     }
 
     // 4. 获取虚表指针
@@ -2961,6 +2998,15 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
     }
     
     // 9. 创建调用
+    if (method_name == "abort") {
+        builder.CreateCall(
+            method_func->getFunctionType(),
+            method_ptr,
+            args
+        );
+        builder.CreateUnreachable();
+        return nullptr;
+    }
     llvm::Value *result = builder.CreateCall(
         method_func->getFunctionType(),
         method_ptr,
@@ -3034,13 +3080,10 @@ llvm::Value *CodeGenerator::emit_cond_class(cond_class* expression)
     if (then_terminated && else_terminated) {
         return nullptr;
     }
-    if (then_terminated) {
-        return else_value;
+    if (then_value == nullptr && !then_terminated) {
+        return nullptr;
     }
-    if (else_terminated) {
-        return then_value;
-    }
-    if (then_value == nullptr || else_value == nullptr) {
+    if (else_value == nullptr && !else_terminated) {
         return nullptr;
     }
 
@@ -3059,16 +3102,43 @@ llvm::Value *CodeGenerator::emit_cond_class(cond_class* expression)
         }
     }
 
-    then_value = coerce_value_to_type(*this, then_value, mergeType, "cond_then_cast");
-    else_value = coerce_value_to_type(*this, else_value, mergeType, "cond_else_cast");
-
-    if (then_value->getType() != mergeType || else_value->getType() != mergeType) {
-        return nullptr;
+    unsigned incomingCount = static_cast<unsigned>((then_terminated ? 0 : 1) + (else_terminated ? 0 : 1));
+    if (incomingCount == 1) {
+        llvm::Value* liveValue = then_terminated ? else_value : then_value;
+        if (liveValue == nullptr) {
+            return nullptr;
+        }
+        liveValue = coerce_value_to_type(
+            *this,
+            liveValue,
+            mergeType,
+            then_terminated ? "cond_else_cast" : "cond_then_cast"
+        );
+        if (liveValue->getType() != mergeType) {
+            return nullptr;
+        }
+        return liveValue;
     }
 
-    llvm::PHINode* phi_node = getIRBuilder().CreatePHI(mergeType, 2, "cond_result");
-    phi_node->addIncoming(then_value, then_end_block);
-    phi_node->addIncoming(else_value, else_end_block);
+    llvm::PHINode* phi_node = getIRBuilder().CreatePHI(
+        mergeType,
+        incomingCount,
+        "cond_result"
+    );
+    if (!then_terminated) {
+        then_value = coerce_value_to_type(*this, then_value, mergeType, "cond_then_cast");
+        if (then_value->getType() != mergeType) {
+            return nullptr;
+        }
+        phi_node->addIncoming(then_value, then_end_block);
+    }
+    if (!else_terminated) {
+        else_value = coerce_value_to_type(*this, else_value, mergeType, "cond_else_cast");
+        if (else_value->getType() != mergeType) {
+            return nullptr;
+        }
+        phi_node->addIncoming(else_value, else_end_block);
+    }
     return phi_node;
 }
 
@@ -3099,7 +3169,8 @@ llvm::Value *CodeGenerator::emit_loop_class(loop_class* expression)
     // loop exit
     getIRBuilder().SetInsertPoint(AfterBB);
 
-    return llvm::ConstantInt::get(getIRBuilder().getInt32Ty(), 0);
+    llvm::Type* objectType = map_cool_type(*this, "Object");
+    return create_default_value(objectType);
 }
 
 llvm::Value *CodeGenerator::emit_typcase_class(typcase_class* expression)
@@ -3115,6 +3186,7 @@ llvm::Value *CodeGenerator::emit_typcase_class(typcase_class* expression)
     if (exprValue == nullptr) {
         return nullptr;
     }
+    emit_null_receiver_guard(*this, exprValue, "case");
 
     Cases cases = expression->cases;
     if (cases == nullptr) {
@@ -3202,10 +3274,12 @@ llvm::Value *CodeGenerator::emit_typcase_class(typcase_class* expression)
         llvm::Value* branchResult = emit_expression(branch->expr);
         getSymbolTable().exitScope();
 
-        if (builder.GetInsertBlock()->getTerminator() == nullptr) {
+        llvm::BasicBlock* branchEndBlock = builder.GetInsertBlock();
+        bool branchFallsThrough = branchEndBlock->getTerminator() == nullptr;
+        if (branchFallsThrough) {
             builder.CreateBr(mergeBlock);
+            incoming.push_back({branchEndBlock, branchResult});
         }
-        incoming.push_back({builder.GetInsertBlock(), branchResult});
 
         if (nextBlock != nullptr) {
             nextBlock->insertInto(currentFunction);
@@ -3232,6 +3306,18 @@ llvm::Value *CodeGenerator::emit_typcase_class(typcase_class* expression)
 
     if (phiType == nullptr) {
         return llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(_context.getLLVMContext()));
+    }
+
+    if (incoming.size() == 1) {
+        llvm::Value* incomingValue = incoming.front().second;
+        if (incomingValue == nullptr) {
+            incomingValue = phiType->isPointerTy()
+                ? static_cast<llvm::Value*>(llvm::ConstantPointerNull::get(static_cast<llvm::PointerType*>(phiType)))
+                : static_cast<llvm::Value*>(llvm::Constant::getNullValue(phiType));
+        } else {
+            incomingValue = coerce_value_to_type(*this, incomingValue, phiType, "case_cast");
+        }
+        return incomingValue;
     }
 
     llvm::PHINode* phi = builder.CreatePHI(phiType, static_cast<unsigned>(incoming.size()), "case.result");
@@ -3264,10 +3350,16 @@ llvm::Value *CodeGenerator::emit_block_class(block_class* expression)
     // 为每个表达式生成代码
     for (int i = body->first(); body->more(i); i = body->next(i)) {
         result = emit_expression(body->nth(i));
+        if (getIRBuilder().GetInsertBlock()->getTerminator() != nullptr) {
+            break;
+        }
     }
     
     // 如果所有表达式都是 void，返回默认值
     if (!result) {
+        if (getIRBuilder().GetInsertBlock()->getTerminator() != nullptr) {
+            return nullptr;
+        }
         // 返回 Object 的默认值（空指针）
         return llvm::Constant::getNullValue(
             llvm::Type::getInt8PtrTy(_context.getLLVMContext()));
@@ -3289,9 +3381,16 @@ llvm::Value *CodeGenerator::emit_let_class(let_class* expression)
     llvm::Type* decl_type = mapCoolTypeToLLVM(expression->type_decl->get_string());
     llvm::AllocaInst* alloca = getIRBuilder().CreateAlloca(decl_type, nullptr, varName);
     llvm::Value* initVal = emit_expression(expression->init);
-    if (initVal != nullptr) {
-        getIRBuilder().CreateStore(initVal, alloca);
+    if (getIRBuilder().GetInsertBlock()->getTerminator() != nullptr) {
+        getSymbolTable().exitScope();
+        return nullptr;
     }
+    if (initVal == nullptr) {
+        initVal = create_default_value(decl_type);
+    } else {
+        initVal = coerce_value_to_type(*this, initVal, decl_type, varName + ".init.cast");
+    }
+    getIRBuilder().CreateStore(initVal, alloca);
 
     (getSymbolTable().currentScope())->addVariable(varName, 
         VariableInfo::createParam(alloca, getSymbolTable().getCurrentClassName(), varName, expression->type_decl->get_string()));
@@ -3713,11 +3812,46 @@ llvm::Value *CodeGenerator::emit_program_class(program_class *program)
     std::cout << "emit_program_class" << std::endl;
     #endif
     if (program == nullptr) return nullptr;
-    
+
     Classes classes = program->classes;
-    for(int i = classes->first(); classes->more(i); i = classes->next(i))
-    {
-        emit_class_(classes->nth(i));
+
+    std::vector<std::string> userClassOrder;
+    for (int i = classes->first(); classes->more(i); i = classes->next(i)) {
+        auto* klass = dynamic_cast<class__class*>(classes->nth(i));
+        if (klass == nullptr) {
+            continue;
+        }
+
+        ClassLayout layout = collect_class_info(klass);
+        build_memory_layout(layout);
+        layout.classTag = allocate_class_tag();
+        getSymbolTable().registerClass(layout);
+        userClassOrder.push_back(layout.name);
+    }
+
+    for (const auto& className : userClassOrder) {
+        if (ClassLayout* layout = getSymbolTable().findClass(className)) {
+            generate_method_prototypes(*layout);
+        }
+    }
+
+    for (const auto& className : userClassOrder) {
+        if (ClassLayout* layout = getSymbolTable().findClass(className)) {
+            build_vtable(*layout);
+        }
+    }
+
+    for (const auto& className : userClassOrder) {
+        if (ClassLayout* layout = getSymbolTable().findClass(className)) {
+            generate_constructor(*layout);
+            layout->newFunc = create_new_function(className, *layout);
+        }
+    }
+
+    for (const auto& className : userClassOrder) {
+        if (ClassLayout* layout = getSymbolTable().findClass(className)) {
+            generate_method_bodies(*layout);
+        }
     }
     
     return nullptr;
