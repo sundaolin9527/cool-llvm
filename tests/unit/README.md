@@ -11,8 +11,7 @@
 
 - 输入文件：`xxx.cl`
 - 期望 IR：`xxx.expected.ll`
-- 推荐放在 `tests/unit/case` 或它的子目录里
-- runner 也兼容旧目录名 `tests/unit/cases`
+- 放在 `tests/unit/cases` 或它的子目录里
 
 ## 默认编译命令
 
@@ -23,7 +22,6 @@ cd {app_dir} && ../bin/.i686/lexer {input} | ./parser {input} | ./semant {input}
 ```
 
 它依赖 `app/parser`、`app/semant`、`app/cgen` 已经被构建好。
-这条链路和 `make dotest` 使用的是同一套前端/代码生成流程，只是把输出抓成 golden-file 对比。
 
 ## 构建
 
