@@ -1,4 +1,10 @@
-.PHONY: all clean cgen cgen-llvm build-unit-tests test-unit
+.PHONY: all clean cgen cgen-llvm test-units unit-test dotest test-llvm output help
+
+UNIT_TEST_FILTER := $(strip $(filter-out unit-test,$(MAKECMDGOALS)))
+
+ifneq ($(UNIT_TEST_FILTER),)
+$(foreach goal,$(UNIT_TEST_FILTER),$(eval .PHONY: $(goal))$(eval $(goal): ; @:))
+endif
 
 all:
 	@echo "Building COOL compiler..."
@@ -17,13 +23,18 @@ clean:
 	@cd app && $(MAKE) clean
 	@cd tests/unit && $(MAKE) clean
 
-build-unit-tests:
-	@echo "Building C++ unit test runner..."
-	@cd tests/unit && $(MAKE) build
-
-test-unit:
-	@echo "Running IR golden tests..."
+test-units: cgen
+	@echo "Running all IR golden tests..."
 	@cd tests/unit && $(MAKE) run
+
+unit-test: cgen
+ifeq ($(UNIT_TEST_FILTER),)
+	@echo "Usage: make unit-test <case-file-or-filter>"
+	@exit 1
+else
+	@echo "Running IR golden tests matching: $(UNIT_TEST_FILTER)"
+	@cd tests/unit && $(MAKE) run TEST_FILTER="$(UNIT_TEST_FILTER)"
+endif
 
 dotest: cgen
 	@echo "Testing..."
@@ -41,9 +52,9 @@ help:
 	@echo ""
 	@echo "Available targets:"
 	@echo "  clean      - Clean build artifacts"
-	@echo "  build-unit-tests - Build the C++ IR unit test runner"
 	@echo "  dotest     - Run tests with original cgen"
-	@echo "  test-unit  - Run C++ IR golden-file unit tests"
+	@echo "  test-units - Build dependencies and run all IR golden-file unit tests"
+	@echo "  unit-test <case> - Run IR golden-file unit tests matching one case/filter"
 	@echo "  help       - Show this help (default)"
 
 .DEFAULT_GOAL := help

@@ -21,6 +21,20 @@ std::string trim_trailing_carriage_return(std::string value) {
     return value;
 }
 
+fs::path default_cases_dir(const fs::path& repo_root) {
+    const fs::path preferred = repo_root / "tests" / "unit" / "case";
+    if (fs::exists(preferred)) {
+        return preferred;
+    }
+
+    const fs::path legacy = repo_root / "tests" / "unit" / "cases";
+    if (fs::exists(legacy)) {
+        return legacy;
+    }
+
+    return preferred;
+}
+
 }  // namespace
 
 IrGoldenTestFramework::IrGoldenTestFramework(IrGoldenRunnerOptions options)
@@ -29,7 +43,7 @@ IrGoldenTestFramework::IrGoldenTestFramework(IrGoldenRunnerOptions options)
         options_.repoRoot = discoverRepoRoot(fs::current_path());
     }
     if (options_.casesDir.empty()) {
-        options_.casesDir = options_.repoRoot / "tests" / "unit" / "cases";
+        options_.casesDir = default_cases_dir(options_.repoRoot);
     }
     if (options_.commandTemplate.empty()) {
         options_.commandTemplate = defaultCommandTemplate();
@@ -37,7 +51,7 @@ IrGoldenTestFramework::IrGoldenTestFramework(IrGoldenRunnerOptions options)
 }
 
 std::string IrGoldenTestFramework::defaultCommandTemplate() {
-    return "cd {app_dir} && ../bin/.i686/lexer {input} | ./parser {input} | ./semant {input} | ./cgen-llvm {input}";
+    return "cd {app_dir} && ../bin/.i686/lexer {input} | ./parser {input} | ./semant {input} | ./cgen {input}";
 }
 
 std::vector<IrGoldenTestCase> IrGoldenTestFramework::discoverCases() const {
@@ -130,7 +144,9 @@ std::vector<IrGoldenTestResult> IrGoldenTestFramework::runAll() const {
 fs::path IrGoldenTestFramework::discoverRepoRoot(const fs::path& start) {
     fs::path current = start;
     while (!current.empty()) {
-        if (fs::exists(current / "SKILL.md") && fs::exists(current / "app") && fs::exists(current / "tests")) {
+        if (fs::exists(current / "Makefile") &&
+            fs::exists(current / "app") &&
+            fs::exists(current / "tests" / "unit")) {
             return current;
         }
         if (current == current.root_path()) {
@@ -154,6 +170,10 @@ std::string IrGoldenTestFramework::normalizeText(const std::string& text) {
             continue;
         }
         normalized.push_back(text[index]);
+    }
+
+    while (!normalized.empty() && normalized.back() == '\n') {
+        normalized.pop_back();
     }
 
     return normalized;
