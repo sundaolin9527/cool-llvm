@@ -515,8 +515,6 @@ void CodeGenerator::buildMethodMaps() {
     std::cout << "Building method maps..." << std::endl;
     #endif
     
-    RuntimeAPI& runtime = getRuntimeAPI();
-    
     // 为每个运行时类构建方法映射
     buildObjectMethodMap(_methodMaps["Object"]);
     buildIntMethodMap(_methodMaps["Int"]);
@@ -526,13 +524,13 @@ void CodeGenerator::buildMethodMaps() {
 }
 
 void CodeGenerator::buildObjectMethodMap(ClassMethodMaps& maps) {
-    RuntimeAPI& runtime = getRuntimeAPI();
+    RuntimeAPI& runtimeAPI = getRuntimeAPI();
     
     // 虚方法映射
     maps.virtualMethods = {
-        {"copy", runtime.getObjectCopy()},
-        {"abort", runtime.getObjectAbort()},
-        {"type_name", runtime.getObjectTypeName()}
+        {"copy", runtimeAPI.getObjectCopy()},
+        {"abort", runtimeAPI.getObjectAbort()},
+        {"type_name", runtimeAPI.getObjectTypeName()}
     };
     
     // 静态方法映射 (Object 可能没有静态方法)
@@ -543,16 +541,16 @@ void CodeGenerator::buildObjectMethodMap(ClassMethodMaps& maps) {
 }
 
 void CodeGenerator::buildIntMethodMap(ClassMethodMaps& maps) {
-    RuntimeAPI& runtime = getRuntimeAPI();
+    RuntimeAPI& runtimeAPI = getRuntimeAPI();
     
     // 虚方法映射
     maps.virtualMethods = {
-        {"plus", runtime.getIntPlus()},
-        {"minus", runtime.getIntMinus()},
-        {"times", runtime.getIntTimes()},
-        {"divide", runtime.getIntDivide()},
-        {"negate", runtime.getIntNegate()},
-        {"equals", runtime.getIntEquals()}
+        {"plus", runtimeAPI.getIntPlus()},
+        {"minus", runtimeAPI.getIntMinus()},
+        {"times", runtimeAPI.getIntTimes()},
+        {"divide", runtimeAPI.getIntDivide()},
+        {"negate", runtimeAPI.getIntNegate()},
+        {"equals", runtimeAPI.getIntEquals()}
     };
     
     maps.staticMethods = {};
@@ -560,11 +558,11 @@ void CodeGenerator::buildIntMethodMap(ClassMethodMaps& maps) {
 }
 
 void CodeGenerator::buildBoolMethodMap(ClassMethodMaps& maps) {
-    RuntimeAPI& runtime = getRuntimeAPI();
+    RuntimeAPI& runtimeAPI = getRuntimeAPI();
     
     maps.virtualMethods = {
-        {"not", runtime.getBoolNot()},
-        {"equals", runtime.getBoolEquals()}
+        {"not", runtimeAPI.getBoolNot()},
+        {"equals", runtimeAPI.getBoolEquals()}
     };
     
     maps.staticMethods = {};
@@ -572,13 +570,13 @@ void CodeGenerator::buildBoolMethodMap(ClassMethodMaps& maps) {
 }
 
 void CodeGenerator::buildStringMethodMap(ClassMethodMaps& maps) {
-    RuntimeAPI& runtime = getRuntimeAPI();
+    RuntimeAPI& runtimeAPI = getRuntimeAPI();
     
     maps.virtualMethods = {
-        {"length", runtime.getStringLength()},
-        {"concat", runtime.getStringConcat()},
-        {"substr", runtime.getStringSubstr()},
-        {"equals", runtime.getStringEquals()}
+        {"length", runtimeAPI.getStringLength()},
+        {"concat", runtimeAPI.getStringConcat()},
+        {"substr", runtimeAPI.getStringSubstr()},
+        {"equals", runtimeAPI.getStringEquals()}
     };
     
     maps.staticMethods = {};
@@ -586,13 +584,13 @@ void CodeGenerator::buildStringMethodMap(ClassMethodMaps& maps) {
 }
 
 void CodeGenerator::buildIOMethodMap(ClassMethodMaps& maps) {
-    RuntimeAPI& runtime = getRuntimeAPI();
+    RuntimeAPI& runtimeAPI = getRuntimeAPI();
     
     maps.virtualMethods = {
-        {"out_string", runtime.getIOOutString()},
-        {"out_int", runtime.getIOOutInt()},
-        {"in_string", runtime.getIOInString()},
-        {"in_int", runtime.getIOInInt()}
+        {"out_string", runtimeAPI.getIOOutString()},
+        {"out_int", runtimeAPI.getIOOutInt()},
+        {"in_string", runtimeAPI.getIOInString()},
+        {"in_int", runtimeAPI.getIOInInt()}
     };
     
     maps.staticMethods = {};

@@ -10,7 +10,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <map>
 #include "cgen.h"
-#include "runtime.h"
+#include "runtimeAPI.h"
 #include "cgen-context.h"
 #include "symbol-table.h"
 
