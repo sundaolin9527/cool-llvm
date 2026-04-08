@@ -15,19 +15,19 @@ source_filename = "main_module"
 @_ZTVN10__cxxabiv117__class_type_infoE = external global [0 x ptr]
 @_ZTVN10__cxxabiv120__si_class_type_infoE = external global [0 x ptr]
 @_ZTI6Object = linkonce_odr constant %struct.__cxxabiv1.__class_type_info { ptr getelementptr inbounds (ptr, ptr @_ZTVN10__cxxabiv117__class_type_infoE, i64 2), ptr @_ZTS6Object }, align 8
-@_ZTV6Object = linkonce_odr constant [5 x ptr] [ptr null, ptr @_ZTI6Object, ptr @Object.copy, ptr @Object.abort, ptr @Object.type_name], align 8
+@_ZTV6Object = linkonce_odr constant [5 x ptr] [ptr null, ptr @_ZTI6Object, ptr @Object_copy, ptr @Object_abort, ptr @Object_type_name], align 8
 @_ZTS3Int = linkonce_odr constant [5 x i8] c"3Int\00", align 1
 @_ZTI3Int = linkonce_odr constant %struct.__cxxabiv1.__si_class_type_info { ptr getelementptr inbounds (ptr, ptr @_ZTVN10__cxxabiv120__si_class_type_infoE, i64 2), ptr @_ZTS3Int, ptr @_ZTI6Object }, align 8
-@_ZTV3Int = linkonce_odr constant [11 x ptr] [ptr null, ptr @_ZTI3Int, ptr @Object.copy, ptr @Object.abort, ptr @Object.type_name, ptr @Int.plus, ptr @Int.minus, ptr @Int.times, ptr @Int.divide, ptr @Int.negate, ptr @Int.equals], align 8
+@_ZTV3Int = linkonce_odr constant [11 x ptr] [ptr null, ptr @_ZTI3Int, ptr @Object_copy, ptr @Object_abort, ptr @Object_type_name, ptr @Int_plus, ptr @Int_minus, ptr @Int_times, ptr @Int_divide, ptr @Int_negate, ptr @Int_equals], align 8
 @_ZTS4Bool = linkonce_odr constant [6 x i8] c"4Bool\00", align 1
 @_ZTI4Bool = linkonce_odr constant %struct.__cxxabiv1.__si_class_type_info { ptr getelementptr inbounds (ptr, ptr @_ZTVN10__cxxabiv120__si_class_type_infoE, i64 2), ptr @_ZTS4Bool, ptr @_ZTI6Object }, align 8
-@_ZTV4Bool = linkonce_odr constant [7 x ptr] [ptr null, ptr @_ZTI4Bool, ptr @Object.copy, ptr @Object.abort, ptr @Object.type_name, ptr @Bool.equals, ptr @Bool.not], align 8
+@_ZTV4Bool = linkonce_odr constant [7 x ptr] [ptr null, ptr @_ZTI4Bool, ptr @Object_copy, ptr @Object_abort, ptr @Object_type_name, ptr @Bool_equals, ptr @Bool_not], align 8
 @_ZTS6String = linkonce_odr constant [8 x i8] c"6String\00", align 1
 @_ZTI6String = linkonce_odr constant %struct.__cxxabiv1.__si_class_type_info { ptr getelementptr inbounds (ptr, ptr @_ZTVN10__cxxabiv120__si_class_type_infoE, i64 2), ptr @_ZTS6String, ptr @_ZTI6Object }, align 8
-@_ZTV6String = linkonce_odr constant [9 x ptr] [ptr null, ptr @_ZTI6String, ptr @Object.copy, ptr @Object.abort, ptr @Object.type_name, ptr @String.equals, ptr @String.length, ptr @String.concat, ptr @String.substr], align 8
+@_ZTV6String = linkonce_odr constant [9 x ptr] [ptr null, ptr @_ZTI6String, ptr @Object_copy, ptr @Object_abort, ptr @Object_type_name, ptr @String_equals, ptr @String_length, ptr @String_concat, ptr @String_substr], align 8
 @_ZTS2IO = linkonce_odr constant [4 x i8] c"2IO\00", align 1
 @_ZTI2IO = linkonce_odr constant %struct.__cxxabiv1.__si_class_type_info { ptr getelementptr inbounds (ptr, ptr @_ZTVN10__cxxabiv120__si_class_type_infoE, i64 2), ptr @_ZTS2IO, ptr @_ZTI6Object }, align 8
-@_ZTV2IO = linkonce_odr constant [9 x ptr] [ptr null, ptr @_ZTI2IO, ptr @Object.copy, ptr @Object.abort, ptr @Object.type_name, ptr @IO.out_string, ptr @IO.out_int, ptr @IO.in_string, ptr @IO.in_int], align 8
+@_ZTV2IO = linkonce_odr constant [9 x ptr] [ptr null, ptr @_ZTI2IO, ptr @Object_copy, ptr @Object_abort, ptr @Object_type_name, ptr @IO_out_string, ptr @IO_out_int, ptr @IO_in_string, ptr @IO_in_int], align 8
 @.str.const.6142509188972423790 = private constant [1 x i8] zeroinitializer
 @.str.const.1325321672193711394 = private constant [5 x i8] c"true\00"
 @.str.const.3658472883277130625 = private constant [6 x i8] c"false\00"
@@ -54,10 +54,10 @@ source_filename = "main_module"
 @.str.num.9 = private constant [2 x i8] c"9\00"
 @_ZTS17CellularAutomaton = linkonce_odr constant [20 x i8] c"17CellularAutomaton\00", align 1
 @_ZTI17CellularAutomaton = linkonce_odr constant %struct.__cxxabiv1.__si_class_type_info { ptr getelementptr inbounds (ptr, ptr @_ZTVN10__cxxabiv120__si_class_type_infoE, i64 2), ptr @_ZTS17CellularAutomaton, ptr @_ZTI2IO }, align 8
-@_ZTV17CellularAutomaton = linkonce_odr constant [17 x ptr] [ptr null, ptr @_ZTI17CellularAutomaton, ptr @Object.copy, ptr @Object.abort, ptr @Object.type_name, ptr @IO.out_string, ptr @IO.out_int, ptr @IO.in_string, ptr @IO.in_int, ptr @CellularAutomaton.init, ptr @CellularAutomaton.print, ptr @CellularAutomaton.num_cells, ptr @CellularAutomaton.cell, ptr @CellularAutomaton.cell_left_neighbor, ptr @CellularAutomaton.cell_right_neighbor, ptr @CellularAutomaton.cell_at_next_evolution, ptr @CellularAutomaton.evolve], align 8
+@_ZTV17CellularAutomaton = linkonce_odr constant [17 x ptr] [ptr null, ptr @_ZTI17CellularAutomaton, ptr @Object_copy, ptr @Object_abort, ptr @Object_type_name, ptr @IO_out_string, ptr @IO_out_int, ptr @IO_in_string, ptr @IO_in_int, ptr @CellularAutomaton.init, ptr @CellularAutomaton.print, ptr @CellularAutomaton.num_cells, ptr @CellularAutomaton.cell, ptr @CellularAutomaton.cell_left_neighbor, ptr @CellularAutomaton.cell_right_neighbor, ptr @CellularAutomaton.cell_at_next_evolution, ptr @CellularAutomaton.evolve], align 8
 @_ZTS4Main = linkonce_odr constant [6 x i8] c"4Main\00", align 1
 @_ZTI4Main = linkonce_odr constant %struct.__cxxabiv1.__si_class_type_info { ptr getelementptr inbounds (ptr, ptr @_ZTVN10__cxxabiv120__si_class_type_infoE, i64 2), ptr @_ZTS4Main, ptr @_ZTI6Object }, align 8
-@_ZTV4Main = linkonce_odr constant [6 x ptr] [ptr null, ptr @_ZTI4Main, ptr @Object.copy, ptr @Object.abort, ptr @Object.type_name, ptr @Main.main], align 8
+@_ZTV4Main = linkonce_odr constant [6 x ptr] [ptr null, ptr @_ZTI4Main, ptr @Object_copy, ptr @Object_abort, ptr @Object_type_name, ptr @Main.main], align 8
 @.str.18400681194753865968 = private constant [2 x i8] c"\0A\00"
 @.str.12043374440167815914 = private constant [2 x i8] c"X\00"
 @.str.15099569138734304119 = private constant [2 x i8] c".\00"
@@ -93,50 +93,50 @@ declare void @exit(i32)
 
 declare void @abort()
 
-declare ptr @Object.copy(ptr)
+declare ptr @Object_copy(ptr)
 
 ; Function Attrs: noreturn
-declare ptr @Object.abort(ptr) #0
+declare ptr @Object_abort(ptr) #0
 
-declare ptr @Object.type_name(ptr)
+declare ptr @Object_type_name(ptr)
 
-declare ptr @IO.out_string(ptr, ptr)
+declare ptr @IO_out_string(ptr, ptr)
 
-declare ptr @IO.out_int(ptr, i32)
+declare ptr @IO_out_int(ptr, i32)
 
-declare ptr @IO.in_string(ptr)
+declare ptr @IO_in_string(ptr)
 
-declare i32 @IO.in_int(ptr)
+declare i32 @IO_in_int(ptr)
 
-declare i32 @String.length(ptr)
+declare i32 @String_length(ptr)
 
-declare ptr @String.concat(ptr, ptr)
+declare ptr @String_concat(ptr, ptr)
 
-declare ptr @String.substr(ptr, i32, i32)
+declare ptr @String_substr(ptr, i32, i32)
 
-declare i1 @String.equals(ptr, ptr)
+declare i1 @String_equals(ptr, ptr)
 
-declare i32 @Int.plus(i32, i32)
+declare i32 @Int_plus(i32, i32)
 
-declare i32 @Int.minus(i32, i32)
+declare i32 @Int_minus(i32, i32)
 
-declare i32 @Int.times(i32, i32)
+declare i32 @Int_times(i32, i32)
 
-declare i32 @Int.divide(i32, i32)
+declare i32 @Int_divide(i32, i32)
 
-declare i32 @Int.negate(i32)
+declare i32 @Int_negate(i32)
 
-declare i1 @Int.equals(i32, i32)
+declare i1 @Int_equals(i32, i32)
 
-declare i1 @Bool.not(i1)
+declare i1 @Bool_not(i1)
 
-declare i1 @Bool.equals(i1, i1)
+declare i1 @Bool_equals(i1, i1)
 
 declare i1 @isvoid(ptr)
 
 declare ptr @new(i32)
 
-declare void @Object.init(ptr)
+declare void @Object_init(ptr)
 
 define void @_ZN6ObjectC2Ev(ptr %this) {
 entry:
@@ -268,7 +268,7 @@ dispatch.abort:                                   ; preds = %entry
   unreachable
 
 dispatch.ok2:                                     ; preds = %dispatch.ok
-  %dispatch.result = call ptr @String.concat(ptr %population_map, ptr @.str.18400681194753865968)
+  %dispatch.result = call ptr @String_concat(ptr %population_map, ptr @.str.18400681194753865968)
   %dispatch.result5 = call ptr %method.ptr(ptr %self, ptr %dispatch.result)
   %self6 = load ptr, ptr %this.addr, align 8
   ret ptr %self6
@@ -289,7 +289,7 @@ entry:
   br i1 %dispatch.isnull, label %dispatch.abort, label %dispatch.ok
 
 dispatch.ok:                                      ; preds = %entry
-  %dispatch.result = call i32 @String.length(ptr %population_map)
+  %dispatch.result = call i32 @String_length(ptr %population_map)
   ret i32 %dispatch.result
 
 dispatch.abort:                                   ; preds = %entry
@@ -311,7 +311,7 @@ entry:
 
 dispatch.ok:                                      ; preds = %entry
   %position1 = load i32, ptr %position.addr, align 4
-  %dispatch.result = call ptr @String.substr(ptr %population_map, i32 %position1, i32 1)
+  %dispatch.result = call ptr @String_substr(ptr %population_map, i32 %position1, i32 1)
   ret ptr %dispatch.result
 
 dispatch.abort:                                   ; preds = %entry
@@ -461,7 +461,7 @@ dispatch.ok:                                      ; preds = %entry
   %method.ptr = load ptr, ptr %method.ptr.addr, align 8
   %position1 = load i32, ptr %position.addr, align 4
   %dispatch.result = call ptr %method.ptr(ptr %self, i32 %position1)
-  %eqtmp = call i1 @String.equals(ptr %dispatch.result, ptr @.str.12043374440167815914)
+  %eqtmp = call i1 @String_equals(ptr %dispatch.result, ptr @.str.12043374440167815914)
   br i1 %eqtmp, label %then, label %else
 
 dispatch.abort:                                   ; preds = %entry
@@ -486,7 +486,7 @@ dispatch.ok3:                                     ; preds = %ifcont
   %method.ptr8 = load ptr, ptr %method.ptr.addr7, align 8
   %position9 = load i32, ptr %position.addr, align 4
   %dispatch.result10 = call ptr %method.ptr8(ptr %self2, i32 %position9)
-  %eqtmp11 = call i1 @String.equals(ptr %dispatch.result10, ptr @.str.12043374440167815914)
+  %eqtmp11 = call i1 @String_equals(ptr %dispatch.result10, ptr @.str.12043374440167815914)
   br i1 %eqtmp11, label %then12, label %else13
 
 dispatch.abort4:                                  ; preds = %ifcont
@@ -512,7 +512,7 @@ dispatch.ok17:                                    ; preds = %ifcont14
   %method.ptr22 = load ptr, ptr %method.ptr.addr21, align 8
   %position23 = load i32, ptr %position.addr, align 4
   %dispatch.result24 = call ptr %method.ptr22(ptr %self16, i32 %position23)
-  %eqtmp25 = call i1 @String.equals(ptr %dispatch.result24, ptr @.str.12043374440167815914)
+  %eqtmp25 = call i1 @String_equals(ptr %dispatch.result24, ptr @.str.12043374440167815914)
   br i1 %eqtmp25, label %then26, label %else27
 
 dispatch.abort18:                                 ; preds = %ifcont14
@@ -601,7 +601,7 @@ dispatch.ok8:                                     ; preds = %dispatch.ok4
   %method.ptr13 = load ptr, ptr %method.ptr.addr12, align 8
   %position14 = load i32, ptr %position, align 4
   %dispatch.result15 = call ptr %method.ptr13(ptr %self7, i32 %position14)
-  %dispatch.result16 = call ptr @String.concat(ptr %temp3, ptr %dispatch.result15)
+  %dispatch.result16 = call ptr @String_concat(ptr %temp3, ptr %dispatch.result15)
   store ptr %dispatch.result16, ptr %temp, align 8
   %position17 = load i32, ptr %position, align 4
   %addtmp = add i32 %position17, 1
