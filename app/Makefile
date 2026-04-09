@@ -58,8 +58,8 @@ all: cgen cgen-llvm
 cgen: ${OBJS} parser semant
 	${CC} ${CFLAGS} ${OBJS} ${LIB} -o cgen
 
-cgen-llvm: ${OBJS} parser semant cgen-llvm.o
-	${CC} ${CFLAGS} ${OBJS} cgen-llvm.o ${LIB} -o cgen-llvm
+cgen-llvm: ${OBJS} parser semant
+	${CC} ${CFLAGS} ${OBJS} ${LIB} -o cgen-llvm
 
 cgen-llvm.o: cgen-llvm.cpp
 	${CC} ${CFLAGS} -c cgen-llvm.cpp -o cgen-llvm.o

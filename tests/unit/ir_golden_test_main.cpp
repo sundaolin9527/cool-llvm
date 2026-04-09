@@ -10,8 +10,10 @@ void print_usage(const char* program) {
     std::cout
         << "Usage: " << program << " [options]\n"
         << "  --repo-root <path>      Repository root, default: auto-discover\n"
-        << "  --cases-dir <path>      Directory containing .cl and .expected.ll pairs\n"
-        << "  --compiler-cmd <tmpl>   Command template with {input} placeholder\n"
+        << "  --cases-dir <path>      Directory containing .cl and .expected.txt pairs\n"
+        << "  --compile-ir-cmd <tmpl> Command template that writes LLVM IR to stdout\n"
+        << "  --link-cmd <tmpl>       Command template that links {actual_ir} to {executable}\n"
+        << "  --run-cmd <tmpl>        Command template used to execute {executable}\n"
         << "  --filter <text>         Run only matching cases\n"
         << "  --list                  List discovered cases only\n"
         << "  --verbose               Print command for each case\n"
@@ -22,7 +24,7 @@ void print_usage(const char* program) {
 
 int main(int argc, char** argv) {
     try {
-        IrGoldenRunnerOptions options;
+        UnitRunnerOptions options;
 
         for (int index = 1; index < argc; ++index) {
             const std::string arg = argv[index];
@@ -37,8 +39,12 @@ int main(int argc, char** argv) {
                 options.repoRoot = require_value("--repo-root");
             } else if (arg == "--cases-dir") {
                 options.casesDir = require_value("--cases-dir");
-            } else if (arg == "--compiler-cmd") {
-                options.commandTemplate = require_value("--compiler-cmd");
+            } else if (arg == "--compile-ir-cmd") {
+                options.compileIrCommandTemplate = require_value("--compile-ir-cmd");
+            } else if (arg == "--link-cmd") {
+                options.linkCommandTemplate = require_value("--link-cmd");
+            } else if (arg == "--run-cmd") {
+                options.runCommandTemplate = require_value("--run-cmd");
             } else if (arg == "--filter") {
                 options.filter = require_value("--filter");
             } else if (arg == "--list") {
@@ -53,7 +59,7 @@ int main(int argc, char** argv) {
             }
         }
 
-        IrGoldenTestFramework framework(options);
+        UnitTestFramework framework(options);
         const auto cases = framework.discoverCases();
 
         if (options.listOnly) {
@@ -71,9 +77,11 @@ int main(int argc, char** argv) {
 
         std::size_t passed = 0;
         for (const auto& testCase : cases) {
-            const IrGoldenTestResult result = framework.runCase(testCase);
+            const UnitTestResult result = framework.runCase(testCase);
             if (options.verbose) {
-                std::cout << "[CMD] " << result.command << "\n";
+                std::cout << "[IR ] " << result.compileCommand << "\n";
+                std::cout << "[LNK] " << result.linkCommand << "\n";
+                std::cout << "[RUN] " << result.runCommand << "\n";
             }
 
             if (result.passed) {
@@ -86,8 +94,8 @@ int main(int argc, char** argv) {
             if (result.diffDetail.has_value()) {
                 std::cout << "  expected: " << result.diffDetail->expectedLine << "\n";
                 std::cout << "  actual  : " << result.diffDetail->actualLine << "\n";
-            } else if (!result.actualIr.empty()) {
-                std::cout << result.actualIr << "\n";
+            } else if (!result.actualOutput.empty()) {
+                std::cout << result.actualOutput << "\n";
             }
         }
 

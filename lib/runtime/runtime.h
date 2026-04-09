@@ -30,26 +30,44 @@ typedef struct CoolObject {
 typedef struct {
     CoolObject parent;
     int32_t value;
+    int32_t _padding;
 } CoolInt;
 
 // 对应 IR: %class.Bool = type { %class.Object.0, i1 }
 typedef struct {
     CoolObject parent;
     int8_t value;
+    uint8_t _padding[7];
 } CoolBool;
 
-// 对应 IR: %class.String = type { %class.Object.0, ptr, i32, i32 }
+// 对应 IR: %class.String = type { %class.Object.0, ptr, i32, [4 x i8], i32, [4 x i8] }
 typedef struct {
     CoolObject parent;
     char* data;
     int32_t length;
+    int32_t _padding0;
     int32_t capacity;
+    int32_t _padding1;
 } CoolString;
 
 // 对应 IR: %class.IO.1 = type { %class.Object.0 }
 typedef struct {
     CoolObject parent;
 } CoolIO;
+
+#if defined(__cplusplus)
+static_assert(sizeof(CoolObject) == 8, "CoolObject layout mismatch");
+static_assert(sizeof(CoolInt) == 16, "CoolInt layout mismatch");
+static_assert(sizeof(CoolBool) == 16, "CoolBool layout mismatch");
+static_assert(sizeof(CoolString) == 32, "CoolString layout mismatch");
+static_assert(sizeof(CoolIO) == 8, "CoolIO layout mismatch");
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+_Static_assert(sizeof(CoolObject) == 8, "CoolObject layout mismatch");
+_Static_assert(sizeof(CoolInt) == 16, "CoolInt layout mismatch");
+_Static_assert(sizeof(CoolBool) == 16, "CoolBool layout mismatch");
+_Static_assert(sizeof(CoolString) == 32, "CoolString layout mismatch");
+_Static_assert(sizeof(CoolIO) == 8, "CoolIO layout mismatch");
+#endif
 
 // ========== 虚函数表声明（这些在IR中已定义）==========
 extern void** _ZTV6Object;

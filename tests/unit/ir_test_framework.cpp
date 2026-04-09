@@ -1,10 +1,12 @@
 #include "ir_test_framework.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <system_error>
 
 #ifndef _WIN32
 #include <sys/wait.h>
@@ -35,9 +37,21 @@ fs::path default_cases_dir(const fs::path& repo_root) {
     return preferred;
 }
 
+fs::path default_artifacts_dir(const fs::path& repo_root) {
+    return repo_root / "tests" / "unit" / ".artifacts";
+}
+
+std::string executable_suffix() {
+#ifdef _WIN32
+    return ".exe";
+#else
+    return "";
+#endif
+}
+
 }  // namespace
 
-IrGoldenTestFramework::IrGoldenTestFramework(IrGoldenRunnerOptions options)
+UnitTestFramework::UnitTestFramework(UnitRunnerOptions options)
     : options_(std::move(options)) {
     if (options_.repoRoot.empty()) {
         options_.repoRoot = discoverRepoRoot(fs::current_path());
@@ -45,17 +59,34 @@ IrGoldenTestFramework::IrGoldenTestFramework(IrGoldenRunnerOptions options)
     if (options_.casesDir.empty()) {
         options_.casesDir = default_cases_dir(options_.repoRoot);
     }
-    if (options_.commandTemplate.empty()) {
-        options_.commandTemplate = defaultCommandTemplate();
+    if (options_.artifactsDir.empty()) {
+        options_.artifactsDir = default_artifacts_dir(options_.repoRoot);
+    }
+    if (options_.compileIrCommandTemplate.empty()) {
+        options_.compileIrCommandTemplate = defaultCompileIrCommandTemplate();
+    }
+    if (options_.linkCommandTemplate.empty()) {
+        options_.linkCommandTemplate = defaultLinkCommandTemplate();
+    }
+    if (options_.runCommandTemplate.empty()) {
+        options_.runCommandTemplate = defaultRunCommandTemplate();
     }
 }
 
-std::string IrGoldenTestFramework::defaultCommandTemplate() {
-    return "cd {app_dir} && ../bin/.i686/lexer {input} | ./parser {input} | ./semant {input} | ./cgen {input}";
+std::string UnitTestFramework::defaultCompileIrCommandTemplate() {
+    return "cd {app_dir} && ../bin/.i686/lexer {input} | ./parser {input} | ./semant {input} | ./cgen-llvm {input}";
 }
 
-std::vector<IrGoldenTestCase> IrGoldenTestFramework::discoverCases() const {
-    std::vector<IrGoldenTestCase> cases;
+std::string UnitTestFramework::defaultLinkCommandTemplate() {
+    return "clang++ {actual_ir} -L{runtime_dir} -lruntime -Wl,-rpath,{runtime_dir} -o {executable}";
+}
+
+std::string UnitTestFramework::defaultRunCommandTemplate() {
+    return "{executable}";
+}
+
+std::vector<UnitTestCase> UnitTestFramework::discoverCases() const {
+    std::vector<UnitTestCase> cases;
     if (!fs::exists(options_.casesDir)) {
         return cases;
     }
@@ -65,13 +96,15 @@ std::vector<IrGoldenTestCase> IrGoldenTestFramework::discoverCases() const {
             continue;
         }
 
-        const fs::path expectedIrPath = entry.path().parent_path() /
-            (entry.path().stem().string() + ".expected.ll");
-        IrGoldenTestCase testCase{
-            entry.path().stem().string(),
-            entry.path(),
-            expectedIrPath,
-        };
+        const fs::path stemPath = entry.path().parent_path() / entry.path().stem();
+        UnitTestCase testCase;
+        testCase.name = entry.path().stem().string();
+        testCase.inputPath = entry.path();
+        testCase.actualIrPath = stemPath;
+        testCase.actualIrPath += ".actual.ll";
+        testCase.expectedOutputPath = stemPath;
+        testCase.expectedOutputPath += ".expected.txt";
+        testCase.executablePath = options_.artifactsDir / (entry.path().stem().string() + executable_suffix());
 
         if (!options_.filter.empty() &&
             testCase.name.find(options_.filter) == std::string::npos &&
@@ -82,66 +115,92 @@ std::vector<IrGoldenTestCase> IrGoldenTestFramework::discoverCases() const {
         cases.push_back(std::move(testCase));
     }
 
-    std::sort(cases.begin(), cases.end(), [](const IrGoldenTestCase& lhs, const IrGoldenTestCase& rhs) {
+    std::sort(cases.begin(), cases.end(), [](const UnitTestCase& lhs, const UnitTestCase& rhs) {
         return lhs.inputPath < rhs.inputPath;
     });
     return cases;
 }
 
-IrGoldenTestResult IrGoldenTestFramework::runCase(const IrGoldenTestCase& testCase) const {
-    IrGoldenTestResult result;
+UnitTestResult UnitTestFramework::runCase(const UnitTestCase& testCase) const {
+    UnitTestResult result;
     result.testCase = testCase;
-    result.command = buildCommand(testCase);
 
-    if (!fs::exists(testCase.expectedIrPath)) {
-        result.message = "missing expected IR file: " + testCase.expectedIrPath.string();
+    if (!fs::exists(testCase.expectedOutputPath)) {
+        result.message = "missing expected output file: " + testCase.expectedOutputPath.string();
         return result;
     }
 
-    std::ifstream expectedStream(testCase.expectedIrPath, std::ios::binary);
+    std::ifstream expectedStream(testCase.expectedOutputPath, std::ios::binary);
     if (!expectedStream) {
-        result.message = "failed to open expected IR file: " + testCase.expectedIrPath.string();
+        result.message = "failed to open expected output file: " + testCase.expectedOutputPath.string();
         return result;
     }
 
     std::ostringstream expectedBuffer;
     expectedBuffer << expectedStream.rdbuf();
-    const std::string expectedIr = normalizeText(expectedBuffer.str());
+    const std::string expectedOutput = normalizeText(expectedBuffer.str());
 
-    CommandResult commandResult = runCommand(result.command);
-    result.commandExitCode = commandResult.exitCode;
-    result.actualIr = normalizeText(commandResult.output);
+    fs::create_directories(testCase.actualIrPath.parent_path());
+    fs::create_directories(testCase.executablePath.parent_path());
 
-    if (commandResult.exitCode != 0) {
-        result.message = "compiler command failed with exit code " + std::to_string(commandResult.exitCode);
+    result.compileCommand = buildCompileCommand(testCase);
+    CommandResult compileResult = runCommand(result.compileCommand, std::nullopt);
+    result.compileExitCode = compileResult.exitCode;
+    result.actualIr = normalizeText(compileResult.output);
+
+    {
+        std::ofstream actualIrStream(testCase.actualIrPath, std::ios::binary);
+        actualIrStream << compileResult.output;
+    }
+
+    if (compileResult.exitCode != 0) {
+        result.message = "IR compile command failed with exit code " + std::to_string(compileResult.exitCode);
         return result;
     }
 
-    if (expectedIr == result.actualIr) {
+    result.linkCommand = buildLinkCommand(testCase);
+    CommandResult linkResult = runCommand(result.linkCommand, std::nullopt);
+    result.linkExitCode = linkResult.exitCode;
+    if (linkResult.exitCode != 0) {
+        result.actualOutput = normalizeText(linkResult.output);
+        result.message = "link command failed with exit code " + std::to_string(linkResult.exitCode);
+        return result;
+    }
+
+    result.runCommand = buildRunCommand(testCase);
+    CommandResult runResult = runCommand(result.runCommand, options_.programInput);
+    result.runExitCode = runResult.exitCode;
+    result.actualOutput = normalizeText(runResult.output);
+    if (runResult.exitCode != 0) {
+        result.message = "program exited with code " + std::to_string(runResult.exitCode);
+        return result;
+    }
+
+    if (expectedOutput == result.actualOutput) {
         result.passed = true;
         result.message = "ok";
         return result;
     }
 
-    result.diffDetail = diffIr(expectedIr, result.actualIr);
+    result.diffDetail = diffText(expectedOutput, result.actualOutput);
     if (result.diffDetail.has_value()) {
         const auto& diff = *result.diffDetail;
-        result.message = "IR mismatch at line " + std::to_string(diff.lineNumber);
+        result.message = "output mismatch at line " + std::to_string(diff.lineNumber);
     } else {
-        result.message = "IR mismatch";
+        result.message = "output mismatch";
     }
     return result;
 }
 
-std::vector<IrGoldenTestResult> IrGoldenTestFramework::runAll() const {
-    std::vector<IrGoldenTestResult> results;
-    for (const IrGoldenTestCase& testCase : discoverCases()) {
+std::vector<UnitTestResult> UnitTestFramework::runAll() const {
+    std::vector<UnitTestResult> results;
+    for (const UnitTestCase& testCase : discoverCases()) {
         results.push_back(runCase(testCase));
     }
     return results;
 }
 
-fs::path IrGoldenTestFramework::discoverRepoRoot(const fs::path& start) {
+fs::path UnitTestFramework::discoverRepoRoot(const fs::path& start) {
     fs::path current = start;
     while (!current.empty()) {
         if (fs::exists(current / "Makefile") &&
@@ -157,7 +216,7 @@ fs::path IrGoldenTestFramework::discoverRepoRoot(const fs::path& start) {
     throw std::runtime_error("failed to locate repository root from " + start.string());
 }
 
-std::string IrGoldenTestFramework::normalizeText(const std::string& text) {
+std::string UnitTestFramework::normalizeText(const std::string& text) {
     std::string normalized;
     normalized.reserve(text.size());
 
@@ -179,7 +238,7 @@ std::string IrGoldenTestFramework::normalizeText(const std::string& text) {
     return normalized;
 }
 
-std::vector<std::string> IrGoldenTestFramework::splitLines(const std::string& text) {
+std::vector<std::string> UnitTestFramework::splitLines(const std::string& text) {
     std::vector<std::string> lines;
     std::istringstream stream(text);
     std::string line;
@@ -192,7 +251,7 @@ std::vector<std::string> IrGoldenTestFramework::splitLines(const std::string& te
     return lines;
 }
 
-std::string IrGoldenTestFramework::shellEscape(const fs::path& path) {
+std::string UnitTestFramework::shellEscape(const fs::path& path) {
     const std::string raw = path.string();
 #ifdef _WIN32
     std::string escaped = "\"";
@@ -219,7 +278,7 @@ std::string IrGoldenTestFramework::shellEscape(const fs::path& path) {
 #endif
 }
 
-std::string IrGoldenTestFramework::replaceAll(std::string text, const std::string& needle, const std::string& value) {
+std::string UnitTestFramework::replaceAll(std::string text, const std::string& needle, const std::string& value) {
     std::size_t position = 0;
     while ((position = text.find(needle, position)) != std::string::npos) {
         text.replace(position, needle.size(), value);
@@ -228,9 +287,24 @@ std::string IrGoldenTestFramework::replaceAll(std::string text, const std::strin
     return text;
 }
 
-IrGoldenTestFramework::CommandResult IrGoldenTestFramework::runCommand(const std::string& command) {
+UnitTestFramework::CommandResult UnitTestFramework::runCommand(
+    const std::string& command,
+    const std::optional<std::string>& stdinText
+) {
     CommandResult result;
-    std::string wrappedCommand = command + " 2>&1";
+    std::string wrappedCommand = command;
+    std::optional<fs::path> stdinPath;
+
+    if (stdinText.has_value()) {
+        const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+        stdinPath = fs::temp_directory_path() / ("cool-unit-stdin-" + std::to_string(nonce) + ".txt");
+        std::ofstream stdinStream(*stdinPath, std::ios::binary);
+        stdinStream << *stdinText;
+        stdinStream.close();
+        wrappedCommand += " < " + shellEscape(*stdinPath);
+    }
+
+    wrappedCommand += " 2>&1";
 
 #ifdef _WIN32
     FILE* pipe = _popen(wrappedCommand.c_str(), "r");
@@ -239,6 +313,10 @@ IrGoldenTestFramework::CommandResult IrGoldenTestFramework::runCommand(const std
 #endif
     if (pipe == nullptr) {
         result.output = "failed to execute command";
+        if (stdinPath.has_value()) {
+            std::error_code ignored;
+            fs::remove(*stdinPath, ignored);
+        }
         return result;
     }
 
@@ -257,21 +335,60 @@ IrGoldenTestFramework::CommandResult IrGoldenTestFramework::runCommand(const std
         result.exitCode = rawStatus;
     }
 #endif
+
+    if (stdinPath.has_value()) {
+        std::error_code ignored;
+        fs::remove(*stdinPath, ignored);
+    }
     return result;
 }
 
-std::string IrGoldenTestFramework::buildCommand(const IrGoldenTestCase& testCase) const {
-    std::string command = options_.commandTemplate;
+std::string UnitTestFramework::buildCompileCommand(const UnitTestCase& testCase) const {
+    std::string command = options_.compileIrCommandTemplate;
     command = replaceAll(command, "{repo_root}", shellEscape(options_.repoRoot));
     command = replaceAll(command, "{app_dir}", shellEscape(options_.repoRoot / "app"));
     command = replaceAll(command, "{tests_dir}", shellEscape(options_.repoRoot / "tests"));
+    command = replaceAll(command, "{runtime_dir}", shellEscape(options_.repoRoot / "lib" / "runtime"));
+    command = replaceAll(command, "{artifacts_dir}", shellEscape(options_.artifactsDir));
     command = replaceAll(command, "{input}", shellEscape(fs::absolute(testCase.inputPath)));
-    command = replaceAll(command, "{expected}", shellEscape(fs::absolute(testCase.expectedIrPath)));
+    command = replaceAll(command, "{expected}", shellEscape(fs::absolute(testCase.expectedOutputPath)));
+    command = replaceAll(command, "{actual_ir}", shellEscape(fs::absolute(testCase.actualIrPath)));
+    command = replaceAll(command, "{executable}", shellEscape(fs::absolute(testCase.executablePath)));
     command = replaceAll(command, "{input_stem}", testCase.inputPath.stem().string());
     return command;
 }
 
-std::optional<IrDiffDetail> IrGoldenTestFramework::diffIr(const std::string& expected, const std::string& actual) const {
+std::string UnitTestFramework::buildLinkCommand(const UnitTestCase& testCase) const {
+    std::string command = options_.linkCommandTemplate;
+    command = replaceAll(command, "{repo_root}", shellEscape(options_.repoRoot));
+    command = replaceAll(command, "{app_dir}", shellEscape(options_.repoRoot / "app"));
+    command = replaceAll(command, "{tests_dir}", shellEscape(options_.repoRoot / "tests"));
+    command = replaceAll(command, "{runtime_dir}", shellEscape(options_.repoRoot / "lib" / "runtime"));
+    command = replaceAll(command, "{artifacts_dir}", shellEscape(options_.artifactsDir));
+    command = replaceAll(command, "{input}", shellEscape(fs::absolute(testCase.inputPath)));
+    command = replaceAll(command, "{expected}", shellEscape(fs::absolute(testCase.expectedOutputPath)));
+    command = replaceAll(command, "{actual_ir}", shellEscape(fs::absolute(testCase.actualIrPath)));
+    command = replaceAll(command, "{executable}", shellEscape(fs::absolute(testCase.executablePath)));
+    command = replaceAll(command, "{input_stem}", testCase.inputPath.stem().string());
+    return command;
+}
+
+std::string UnitTestFramework::buildRunCommand(const UnitTestCase& testCase) const {
+    std::string command = options_.runCommandTemplate;
+    command = replaceAll(command, "{repo_root}", shellEscape(options_.repoRoot));
+    command = replaceAll(command, "{app_dir}", shellEscape(options_.repoRoot / "app"));
+    command = replaceAll(command, "{tests_dir}", shellEscape(options_.repoRoot / "tests"));
+    command = replaceAll(command, "{runtime_dir}", shellEscape(options_.repoRoot / "lib" / "runtime"));
+    command = replaceAll(command, "{artifacts_dir}", shellEscape(options_.artifactsDir));
+    command = replaceAll(command, "{input}", shellEscape(fs::absolute(testCase.inputPath)));
+    command = replaceAll(command, "{expected}", shellEscape(fs::absolute(testCase.expectedOutputPath)));
+    command = replaceAll(command, "{actual_ir}", shellEscape(fs::absolute(testCase.actualIrPath)));
+    command = replaceAll(command, "{executable}", shellEscape(fs::absolute(testCase.executablePath)));
+    command = replaceAll(command, "{input_stem}", testCase.inputPath.stem().string());
+    return command;
+}
+
+std::optional<TextDiffDetail> UnitTestFramework::diffText(const std::string& expected, const std::string& actual) const {
     const std::vector<std::string> expectedLines = splitLines(expected);
     const std::vector<std::string> actualLines = splitLines(actual);
     const std::size_t maxLines = std::max(expectedLines.size(), actualLines.size());
@@ -280,7 +397,7 @@ std::optional<IrDiffDetail> IrGoldenTestFramework::diffIr(const std::string& exp
         const std::string expectedLine = index < expectedLines.size() ? expectedLines[index] : "<EOF>";
         const std::string actualLine = index < actualLines.size() ? actualLines[index] : "<EOF>";
         if (expectedLine != actualLine) {
-            return IrDiffDetail{index + 1, expectedLine, actualLine};
+            return TextDiffDetail{index + 1, expectedLine, actualLine};
         }
     }
     return std::nullopt;

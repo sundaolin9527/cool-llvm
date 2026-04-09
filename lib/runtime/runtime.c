@@ -13,6 +13,23 @@ extern void** _ZTV2IO;       // IO虚表
 
 // ========== 辅助函数 ==========
 
+typedef struct CoolStringRegistryNode {
+    const void* object_ptr;
+    struct CoolStringRegistryNode* next;
+} CoolStringRegistryNode;
+
+static CoolStringRegistryNode* g_cool_string_registry = NULL;
+
+static void register_cool_string_object(const void* object_ptr) {
+    CoolStringRegistryNode* node = (CoolStringRegistryNode*)malloc(sizeof(CoolStringRegistryNode));
+    if (!node) {
+        return;
+    }
+    node->object_ptr = object_ptr;
+    node->next = g_cool_string_registry;
+    g_cool_string_registry = node;
+}
+
 static CoolString* create_cool_string(const char* src) {
     if (!src) src = "";
     
@@ -21,17 +38,54 @@ static CoolString* create_cool_string(const char* src) {
     
     str->parent.vtable = _ZTV6String;
     str->length = strlen(src);
+    str->_padding0 = 0;
     str->capacity = str->length + 1;
+    str->_padding1 = 0;
     str->data = (char*)malloc(str->capacity);
-    
+
     if (str->data) {
         strcpy(str->data, src);
+        register_cool_string_object(str);
     } else {
         free(str);
         return NULL;
     }
     
     return str;
+}
+
+static int is_cool_string_object(const void* ptr) {
+    if (!ptr) {
+        return 0;
+    }
+    for (CoolStringRegistryNode* node = g_cool_string_registry; node != NULL; node = node->next) {
+        if (node->object_ptr == ptr) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static const char* cool_string_data(const void* ptr) {
+    if (!ptr) {
+        return "";
+    }
+    if (is_cool_string_object(ptr)) {
+        const CoolString* str = (const CoolString*)ptr;
+        return str->data ? str->data : "";
+    }
+    return (const char*)ptr;
+}
+
+static size_t cool_string_length(const void* ptr) {
+    if (!ptr) {
+        return 0;
+    }
+    if (is_cool_string_object(ptr)) {
+        const CoolString* str = (const CoolString*)ptr;
+        return (size_t)str->length;
+    }
+    return strlen((const char*)ptr);
 }
 
 static void free_cool_string(CoolString* str) {
@@ -46,6 +100,7 @@ static CoolInt* create_cool_int(int32_t value) {
     if (!obj) return NULL;
     obj->parent.vtable = _ZTV3Int;
     obj->value = value;
+    obj->_padding = 0;
     return obj;
 }
 
@@ -54,6 +109,7 @@ static CoolBool* create_cool_bool(int8_t value) {
     if (!obj) return NULL;
     obj->parent.vtable = _ZTV4Bool;
     obj->value = value;
+    memset(obj->_padding, 0, sizeof(obj->_padding));
     return obj;
 }
 
@@ -109,17 +165,7 @@ void* IO_out_string(void* this_ptr, void* str_ptr) {
         return this_ptr;
     }
     
-    // 检查是否是String对象
-    void** vtable = *(void***)str_ptr;
-    if (vtable == _ZTV6String) {
-        CoolString* str = (CoolString*)str_ptr;
-        if (str->data) {
-            printf("%s", str->data);
-        }
-    } else {
-        // 如果是普通C字符串（兼容旧代码）
-        printf("%s", (char*)str_ptr);
-    }
+    printf("%s", cool_string_data(str_ptr));
     
     return this_ptr;
 }
@@ -159,13 +205,7 @@ int IO_in_int(void* this_ptr) {
 // ========== String 方法 ==========
 
 int String_length(void* this_ptr) {
-    if (!this_ptr) return 0;
-    
-    void** vtable = *(void***)this_ptr;
-    if (vtable != _ZTV6String) return 0;
-    
-    CoolString* str = (CoolString*)this_ptr;
-    return str->length;
+    return (int)cool_string_length(this_ptr);
 }
 
 void* String_concat(void* this_ptr, void* other_ptr) {
@@ -173,15 +213,14 @@ void* String_concat(void* this_ptr, void* other_ptr) {
         return create_cool_string("");
     }
     
-    CoolString* s1 = (CoolString*)this_ptr;
-    CoolString* s2 = (CoolString*)other_ptr;
-    
-    int new_len = s1->length + s2->length;
+    const char* s1 = cool_string_data(this_ptr);
+    const char* s2 = cool_string_data(other_ptr);
+    const int new_len = (int)(strlen(s1) + strlen(s2));
     char* new_data = (char*)malloc(new_len + 1);
     if (!new_data) return create_cool_string("");
     
-    strcpy(new_data, s1->data ? s1->data : "");
-    strcat(new_data, s2->data ? s2->data : "");
+    strcpy(new_data, s1);
+    strcat(new_data, s2);
     
     CoolString* result = create_cool_string(new_data);
     free(new_data);
@@ -192,16 +231,17 @@ void* String_concat(void* this_ptr, void* other_ptr) {
 void* String_substr(void* this_ptr, int start, int length) {
     if (!this_ptr) return create_cool_string("");
     
-    CoolString* str = (CoolString*)this_ptr;
+    const char* str = cool_string_data(this_ptr);
+    const int source_len = (int)cool_string_length(this_ptr);
     
     // 边界检查
     if (start < 0) start = 0;
-    if (start >= str->length) {
+    if (start >= source_len) {
         return create_cool_string("");
     }
     if (length < 0) length = 0;
-    if (start + length > str->length) {
-        length = str->length - start;
+    if (start + length > source_len) {
+        length = source_len - start;
     }
     if (length == 0) {
         return create_cool_string("");
@@ -210,7 +250,7 @@ void* String_substr(void* this_ptr, int start, int length) {
     char* substr = (char*)malloc(length + 1);
     if (!substr) return create_cool_string("");
     
-    strncpy(substr, str->data + start, length);
+    strncpy(substr, str + start, length);
     substr[length] = '\0';
     
     CoolString* result = create_cool_string(substr);
@@ -222,16 +262,12 @@ void* String_substr(void* this_ptr, int start, int length) {
 int String_equals(void* this_ptr, void* other_ptr) {
     if (this_ptr == other_ptr) return 1;
     if (!this_ptr || !other_ptr) return 0;
-    
-    CoolString* s1 = (CoolString*)this_ptr;
-    CoolString* s2 = (CoolString*)other_ptr;
-    
-    if (s1->length != s2->length) return 0;
-    
-    if (!s1->data && !s2->data) return 1;
-    if (!s1->data || !s2->data) return 0;
-    
-    return strcmp(s1->data, s2->data) == 0;
+
+    const size_t lhs_len = cool_string_length(this_ptr);
+    const size_t rhs_len = cool_string_length(other_ptr);
+    if (lhs_len != rhs_len) return 0;
+
+    return strcmp(cool_string_data(this_ptr), cool_string_data(other_ptr)) == 0;
 }
 
 // ========== Int 方法 ==========

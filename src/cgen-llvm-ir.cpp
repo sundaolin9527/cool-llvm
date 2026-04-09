@@ -9,6 +9,14 @@ namespace {
 
 std::string normalize_cool_type(SymbolTableManager& symbolTable, const std::string& typeName);
 
+uint64_t align_to(uint64_t value, uint64_t alignment) {
+    if (alignment == 0) {
+        return value;
+    }
+    const uint64_t remainder = value % alignment;
+    return remainder == 0 ? value : value + (alignment - remainder);
+}
+
 llvm::Type* map_cool_type(CodeGenerator& generator, const std::string& typeName) {
     SymbolTableManager& symbolTable = generator.getSymbolTable();
     llvm::LLVMContext& ctx = generator.getContext().getLLVMContext();
@@ -365,6 +373,21 @@ llvm::Value* create_default_value(llvm::Type* type) {
     }
 
     return llvm::Constant::getNullValue(type);
+}
+
+llvm::Value* create_default_cool_value(CodeGenerator& generator,
+                                       const std::string& coolTypeName,
+                                       llvm::Type* llvmType) {
+    SymbolTableManager& symbolTable = generator.getSymbolTable();
+    const std::string normalizedType = normalize_cool_type(symbolTable, coolTypeName);
+
+    if (normalizedType == "String") {
+        if (llvm::Value* empty = symbolTable.getStringValue("")) {
+            return coerce_value_to_type(generator, empty, llvmType, "default.string");
+        }
+    }
+
+    return create_default_value(llvmType);
 }
 
 void emit_runtime_abort(CodeGenerator& generator) {
@@ -1541,7 +1564,7 @@ void CodeGenerator::generate_method_bodies(ClassLayout& classLayout)
                 getIRBuilder().CreateRetVoid();
             } else {
                 if (result == nullptr) {
-                    result = create_default_value(returnType);
+                    result = create_default_cool_value(*this, method->return_type->get_string(), returnType);
                 }
                 if (result->getType() != returnType) {
                     result = coerce_value_to_type(*this, result, returnType, "result");
@@ -1618,6 +1641,10 @@ void CodeGenerator::build_memory_layout(ClassLayout& classLayout)
     
     std::vector<llvm::Type*> structFields;
     SymbolTableManager& symbol_table = getSymbolTable();
+    const llvm::DataLayout& DL = getModule().getDataLayout();
+    llvm::LLVMContext& ctx = _context.getLLVMContext();
+    llvm::Type* i8Ty = llvm::Type::getInt8Ty(ctx);
+    uint64_t currentOffset = 0;
     
     // 判断类是否有虚函数
     bool hasVirtualFunctions = !classLayout.methods.empty();
@@ -1628,6 +1655,7 @@ void CodeGenerator::build_memory_layout(ClassLayout& classLayout)
         ClassLayout* parentLayout = symbol_table.findClass(classLayout.parentName);
         if (parentLayout && parentLayout->type) {
             structFields.push_back(parentLayout->type);
+            currentOffset = DL.getTypeAllocSize(parentLayout->type);
         }
     } else {
         // 根类
@@ -1635,13 +1663,29 @@ void CodeGenerator::build_memory_layout(ClassLayout& classLayout)
             llvm::Type* vptrType = llvm::PointerType::get(
                 llvm::Type::getInt8Ty(_context.getLLVMContext()), 0);
             structFields.push_back(vptrType);
+            currentOffset = DL.getTypeAllocSize(vptrType);
         }
     }
     
-    // 添加当前类自己的属性（数据成员）
+    // 显式插入 padding，把每个字段都对齐到 8 字节边界。
     for (const auto& attrName : classLayout.attributeOrder) {
-        const VariableInfo& info = classLayout.ownAttributes.at(attrName);
-        structFields.push_back(mapCoolTypeToLLVM(info.typeName));
+        VariableInfo& info = classLayout.ownAttributes[attrName];
+        llvm::Type* fieldType = mapCoolTypeToLLVM(info.typeName);
+        const uint64_t alignedOffset = align_to(currentOffset, 8);
+        if (alignedOffset > currentOffset) {
+            structFields.push_back(llvm::ArrayType::get(i8Ty, alignedOffset - currentOffset));
+            currentOffset = alignedOffset;
+        }
+
+        info.offset = static_cast<std::size_t>(currentOffset);
+        info.className = classLayout.name;
+        structFields.push_back(fieldType);
+        currentOffset += DL.getTypeAllocSize(fieldType);
+    }
+
+    const uint64_t finalSize = align_to(currentOffset, 8);
+    if (finalSize > currentOffset) {
+        structFields.push_back(llvm::ArrayType::get(i8Ty, finalSize - currentOffset));
     }
     
     // 创建结构体类型
@@ -1650,34 +1694,15 @@ void CodeGenerator::build_memory_layout(ClassLayout& classLayout)
                                                 structFields, 
                                                 typeName);
     
-    // 计算类大小和字段偏移量
-    const llvm::DataLayout& DL = getModule().getDataLayout();
     classLayout.objectSize = DL.getTypeAllocSize(classLayout.type);
-    
-    // 计算每个字段的偏移量并更新VariableInfo
-    const llvm::StructLayout* layout = DL.getStructLayout(classLayout.type);
-    unsigned fieldIndex = 0;
-    
-    // 处理继承链的偏移
-    if (!classLayout.parentName.empty()) {
-        // 有父类：跳过父类子对象
-        fieldIndex++;
-    } else if (hasVirtualFunctions) {
-        // 根类且有虚函数：跳过vptr
-        fieldIndex++;
-    }
-    
-    // 更新当前类数据成员的偏移
+
+    #ifdef DEBUG
     for (const auto& attrName : classLayout.attributeOrder) {
-        VariableInfo& info = classLayout.ownAttributes[attrName];
-        info.offset = layout->getElementOffset(fieldIndex++);
-        info.className = classLayout.name;
-        
-        #ifdef DEBUG
+        const VariableInfo& info = classLayout.ownAttributes.at(attrName);
         std::cout << "  field " << attrName
                   << " offset = " << info.offset << std::endl;
-        #endif
     }
+    #endif
 }
 
 /**
@@ -2438,9 +2463,9 @@ void CodeGenerator::generate_constructor(ClassLayout& classLayout)
     }
     
     // 初始化当前类的属性
-    unsigned fieldIndex = getFieldStartIndex(classLayout);
-    unsigned i = 0;
-    
+    llvm::Type* i8Ty = llvm::Type::getInt8Ty(_context.getLLVMContext());
+    llvm::Value* byteBase = getIRBuilder().CreateBitCast(thisPtr, i8Ty->getPointerTo(), "this.byte.base");
+
     for (const auto& attrName : classLayout.attributeOrder) {
         if (attrName == "self") continue;
 
@@ -2452,13 +2477,16 @@ void CodeGenerator::generate_constructor(ClassLayout& classLayout)
         VariableInfo& varInfo = attrIt->second;
         llvm::Type* fieldType = mapCoolTypeToLLVM(varInfo.typeName);
         
-        // 获取字段地址
-        llvm::Value* fieldAddr = getIRBuilder().CreateStructGEP(
-            classLayout.type,
-            thisPtr,
-            fieldIndex + i,
-            // attr.first + ".addr"
-            "this.addr"
+        llvm::Value* fieldBytePtr = getIRBuilder().CreateGEP(
+            i8Ty,
+            byteBase,
+            llvm::ConstantInt::get(llvm::Type::getInt64Ty(_context.getLLVMContext()), static_cast<uint64_t>(varInfo.offset)),
+            attrName + ".addr.byte"
+        );
+        llvm::Value* fieldAddr = getIRBuilder().CreateBitCast(
+            fieldBytePtr,
+            llvm::PointerType::get(fieldType, 0),
+            attrName + ".addr"
         );
         
         auto attrNodeIt = classLayout.attributeNodes.find(attrName);
@@ -2468,7 +2496,10 @@ void CodeGenerator::generate_constructor(ClassLayout& classLayout)
             !dynamic_cast<no_expr_class*>(attrNodeIt->second->init);
 
         if (!hasExplicitInit) {
-            getIRBuilder().CreateStore(create_default_value(fieldType), fieldAddr);
+            getIRBuilder().CreateStore(
+                create_default_cool_value(*this, varInfo.typeName, fieldType),
+                fieldAddr
+            );
         }
 
         if (hasExplicitInit) {
@@ -2486,7 +2517,6 @@ void CodeGenerator::generate_constructor(ClassLayout& classLayout)
 
         // 更新变量信息中的值（地址）
         varInfo.updateValue(fieldAddr);
-        i++;
     }
     
     // 设置self成员变量（指向对象本身）
@@ -3384,7 +3414,7 @@ llvm::Value *CodeGenerator::emit_let_class(let_class* expression)
         return nullptr;
     }
     if (initVal == nullptr) {
-        initVal = create_default_value(decl_type);
+        initVal = create_default_cool_value(*this, expression->type_decl->get_string(), decl_type);
     } else {
         initVal = coerce_value_to_type(*this, initVal, decl_type, varName + ".init.cast");
     }

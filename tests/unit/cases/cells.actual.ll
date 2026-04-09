@@ -3,10 +3,10 @@ source_filename = "main_module"
 
 %struct.__cxxabiv1.__class_type_info = type { ptr, ptr }
 %struct.__cxxabiv1.__si_class_type_info = type { ptr, ptr, ptr }
-%class.Int = type { %class.Object.0, i32 }
+%class.Int = type { %class.Object.0, i32, [4 x i8] }
 %class.Object.0 = type { ptr }
-%class.Bool = type { %class.Object.0, i1 }
-%class.String = type { %class.Object.0, ptr, i32, i32 }
+%class.Bool = type { %class.Object.0, i1, [7 x i8] }
+%class.String = type { %class.Object.0, ptr, i32, [4 x i8], i32, [4 x i8] }
 %class.IO.1 = type { %class.Object.0 }
 %class.CellularAutomaton = type { %class.IO.1, ptr }
 %class.Main = type { %class.Object.0, ptr }
@@ -153,8 +153,8 @@ entry:
   %parent.subobject = getelementptr inbounds %class.Int, ptr %this, i32 0, i32 0
   call void @_ZN6ObjectC2Ev(ptr %parent.subobject)
   store ptr @_ZTV3Int, ptr %this, align 8
-  %this.addr1 = getelementptr inbounds %class.Int, ptr %this, i32 0, i32 1
-  store i32 0, ptr %this.addr1, align 4
+  %value.addr.byte = getelementptr i8, ptr %this, i64 8
+  store i32 0, ptr %value.addr.byte, align 4
   ret void
 }
 
@@ -165,8 +165,8 @@ entry:
   %parent.subobject = getelementptr inbounds %class.Bool, ptr %this, i32 0, i32 0
   call void @_ZN6ObjectC2Ev(ptr %parent.subobject)
   store ptr @_ZTV4Bool, ptr %this, align 8
-  %this.addr1 = getelementptr inbounds %class.Bool, ptr %this, i32 0, i32 1
-  store i1 false, ptr %this.addr1, align 1
+  %value.addr.byte = getelementptr i8, ptr %this, i64 8
+  store i1 false, ptr %value.addr.byte, align 1
   ret void
 }
 
@@ -177,12 +177,12 @@ entry:
   %parent.subobject = getelementptr inbounds %class.String, ptr %this, i32 0, i32 0
   call void @_ZN6ObjectC2Ev(ptr %parent.subobject)
   store ptr @_ZTV6String, ptr %this, align 8
-  %this.addr1 = getelementptr inbounds %class.String, ptr %this, i32 0, i32 1
-  store ptr null, ptr %this.addr1, align 8
-  %this.addr2 = getelementptr inbounds %class.String, ptr %this, i32 0, i32 2
-  store i32 0, ptr %this.addr2, align 4
-  %this.addr3 = getelementptr inbounds %class.String, ptr %this, i32 0, i32 3
-  store i32 0, ptr %this.addr3, align 4
+  %data.addr.byte = getelementptr i8, ptr %this, i64 8
+  store ptr null, ptr %data.addr.byte, align 8
+  %length.addr.byte = getelementptr i8, ptr %this, i64 16
+  store i32 0, ptr %length.addr.byte, align 4
+  %hash.addr.byte = getelementptr i8, ptr %this, i64 24
+  store i32 0, ptr %hash.addr.byte, align 4
   ret void
 }
 
@@ -219,7 +219,7 @@ entry:
 
 define ptr @String.new() {
 entry:
-  %0 = call ptr @malloc(i64 24)
+  %0 = call ptr @malloc(i64 32)
   call void @_ZN6StringC2Ev(ptr %0)
   ret ptr %0
 }
@@ -560,7 +560,7 @@ dispatch.ok:                                      ; preds = %entry
   %dispatch.result = call i32 %method.ptr(ptr %self)
   store i32 %dispatch.result, ptr %num, align 4
   %temp = alloca ptr, align 8
-  store ptr null, ptr %temp, align 8
+  store ptr @.str.const.6142509188972423790, ptr %temp, align 8
   br label %loop.cond
 
 dispatch.abort:                                   ; preds = %entry
@@ -705,8 +705,8 @@ entry:
   %parent.subobject = getelementptr inbounds %class.CellularAutomaton, ptr %this, i32 0, i32 0
   call void @_ZN2IOC2Ev(ptr %parent.subobject)
   store ptr @_ZTV17CellularAutomaton, ptr %this, align 8
-  %this.addr1 = getelementptr inbounds %class.CellularAutomaton, ptr %this, i32 0, i32 1
-  store ptr null, ptr %this.addr1, align 8
+  %population_map.addr.byte = getelementptr i8, ptr %this, i64 8
+  store ptr @.str.const.6142509188972423790, ptr %population_map.addr.byte, align 8
   ret void
 }
 
@@ -724,8 +724,8 @@ entry:
   %parent.subobject = getelementptr inbounds %class.Main, ptr %this, i32 0, i32 0
   call void @_ZN6ObjectC2Ev(ptr %parent.subobject)
   store ptr @_ZTV4Main, ptr %this, align 8
-  %this.addr1 = getelementptr inbounds %class.Main, ptr %this, i32 0, i32 1
-  store ptr null, ptr %this.addr1, align 8
+  %cells.addr.byte = getelementptr i8, ptr %this, i64 8
+  store ptr null, ptr %cells.addr.byte, align 8
   ret void
 }
 

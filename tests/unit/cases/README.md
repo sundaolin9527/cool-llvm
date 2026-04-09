@@ -1,21 +1,20 @@
-# 用例目录
+# ????
 
-把 `.cl` 输入文件和对应的 `.expected.ll` 放到这里。
+? `.cl` ???????? `.expected.txt` ?????
 
-命名示例：
+?????
 
 - `example.cl`
-- `example.expected.ll`
+- `example.actual.ll`
+- `example.expected.txt`
 
-runner 会自动递归扫描这个目录，并把同名文件配对成一个 IR golden test。
-从仓库根目录可用 `make test-units` 运行全部用例，或用 `make unit-test arith.cl` 只运行单个用例。
+runner ???????????????? `.actual.ll`?????????????? `.expected.txt` ????
+???????? `make test-units` ????????? `make unit-test arith.cl` ????????
 
-# 编译 example 用例
-clang++ example.expected.ll \
-    -L/opt/sundaolin/cool/lib/runtime \
-    -lruntime \
-    -Wl,-rpath,/opt/sundaolin/cool/lib/runtime \
-    -o example
+# ????/?? example ??
+cd ../../../app && ../bin/.i686/lexer ../tests/unit/cases/example.cl | ./parser ../tests/unit/cases/example.cl | ./semant ../tests/unit/cases/example.cl | ./cgen-llvm ../tests/unit/cases/example.cl > ../tests/unit/cases/example.actual.ll
+clang++ example.actual.ll     -L/opt/sundaolin/cool/lib/runtime     -lruntime     -Wl,-rpath,/opt/sundaolin/cool/lib/runtime     -o example
 
-# 运行
-./example
+# ??
+printf 'q
+' | ./example
