@@ -56,7 +56,7 @@ help:
 	@echo ""
 	@echo "Available targets:"
 	@echo "  clean      - Clean build artifacts"
-	@echo "  dotest     - Run tests with original cgen"
+	@echo "  dotest     - Run tests and print IR"
 	@echo "  test-units - Build dependencies and run all executable-output unit tests"
 	@echo "  unit-test <case> - Run executable-output unit tests matching one case/filter"
 	@echo "  help       - Show this help (default)"
