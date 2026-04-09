@@ -217,8 +217,6 @@ char *strdup(const char *s)
 {
   char *news;
 
-  if (s == NULL) return(NULL);
-
   news = (char *)malloc(strlen(s)+1);
   strcpy(news, s);
   return(news);

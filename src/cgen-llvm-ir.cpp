@@ -2695,6 +2695,7 @@ llvm::Value *CodeGenerator::emit_attr_class(attr_class* attr)
     std::cout << "emit_attr_class" << std::endl;
     #endif
     if (attr == nullptr) return nullptr;
+    return nullptr;
 }
 
 llvm::Value *CodeGenerator::emit_feature(Feature feature)
@@ -3790,8 +3791,7 @@ llvm::Value *CodeGenerator::emit_branch_class(branch_class *branch)
     std::cout << "emit_branch_class" << std::endl;
     #endif
     if (branch == nullptr) return nullptr;
-    
-    
+    return nullptr;
 }
 
 llvm::Value *CodeGenerator::emit_case(Case _case)

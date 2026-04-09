@@ -409,8 +409,9 @@ std::string SymbolTableManager::getCoolTypeForLLVMType(llvm::Type* llvmType) con
     }
     
     // 如果是指针类型，查找其指向的类型
-    if (auto* ptrType = llvm::dyn_cast<llvm::PointerType>(llvmType)) {
-        llvm::Type* pointee = ptrType->getPointerElementType();
+    if (auto* ptrType = llvm::dyn_cast<llvm::PointerType>(llvmType);
+        ptrType != nullptr && !ptrType->isOpaque()) {
+        llvm::Type* pointee = ptrType->getNonOpaquePointerElementType();
         auto pointeeIt = llvmToCool.find(pointee);
         if (pointeeIt != llvmToCool.end()) {
             return pointeeIt->second;
@@ -440,8 +441,9 @@ bool SymbolTableManager::hasLLVMType(llvm::Type* llvmType) const {
     }
     
     // 如果是指针类型，检查其指向的类型
-    if (auto* ptrType = llvm::dyn_cast<llvm::PointerType>(llvmType)) {
-        llvm::Type* pointee = ptrType->getPointerElementType();
+    if (auto* ptrType = llvm::dyn_cast<llvm::PointerType>(llvmType);
+        ptrType != nullptr && !ptrType->isOpaque()) {
+        llvm::Type* pointee = ptrType->getNonOpaquePointerElementType();
         if (llvmToCool.find(pointee) != llvmToCool.end()) {
             return true;
         }
