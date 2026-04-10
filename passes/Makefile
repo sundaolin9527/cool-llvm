@@ -8,7 +8,7 @@ endif
 CXX ?= clang++
 CXXFLAGS += -fPIC -Wall -Wextra -Wpedantic $(shell $(LLVM_CONFIG) --cxxflags) -std=c++17
 LDFLAGS += -shared
-LDLIBS += $(shell $(LLVM_CONFIG) --ldflags --libs core passes support) $(shell $(LLVM_CONFIG) --system-libs)
+LDLIBS += $(shell $(LLVM_CONFIG) --ldflags --libs core analysis scalaropts ipo transformutils passes support) $(shell $(LLVM_CONFIG) --system-libs)
 
 SRCS := $(sort $(wildcard *.cpp))
 PASS_NAMES := $(basename $(SRCS))

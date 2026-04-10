@@ -11,8 +11,8 @@ endif
 ROOT_DIR := ../..
 PASS_DIR := $(ROOT_DIR)/passes
 OPT := $(shell $(LLVM_CONFIG) --bindir)/opt
-PASS_PLUGIN ?= $(PASS_DIR)/libCoolModuleSummaryPass.so
-PASS_PIPELINE ?= cool-module-summary
+PASS_PLUGIN ?= {case_plugin}
+PASS_PIPELINE ?= {case_pipeline}
 TARGET := pass_test_runner
 OBJS := golden_test_main.o golden_test_framework.o
 PREPARE_CMD := $(OPT) -load-pass-plugin $(PASS_PLUGIN) -passes=$(PASS_PIPELINE) -S {input_rel} -o {actual_artifact_rel}

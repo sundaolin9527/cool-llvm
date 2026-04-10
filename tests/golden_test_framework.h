@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 enum class CommandOutputMode {
@@ -18,6 +19,7 @@ struct GoldenTestCase {
     std::filesystem::path actualArtifactPath;
     std::filesystem::path expectedOutputPath;
     std::filesystem::path executablePath;
+    std::unordered_map<std::string, std::string> variables;
 };
 
 struct TextDiffDetail {
@@ -86,6 +88,7 @@ private:
     static std::string shellEscape(const std::filesystem::path& path);
     static std::string replaceAll(std::string text, const std::string& needle, const std::string& value);
     static std::string readTextFile(const std::filesystem::path& path);
+    static std::unordered_map<std::string, std::string> readCaseVariables(const std::filesystem::path& path);
     static CommandResult runCommand(const std::string& command, const std::optional<std::string>& stdinText);
     static bool endsWith(const std::string& value, const std::string& suffix);
     static std::string stripSuffix(const std::string& value, const std::string& suffix);

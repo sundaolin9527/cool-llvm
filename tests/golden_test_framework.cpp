@@ -1,6 +1,7 @@
 #include "golden_test_framework.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <fstream>
@@ -16,6 +17,8 @@ namespace fs = std::filesystem;
 
 namespace {
 
+std::string localShellEscape(const std::string& raw);
+
 std::string trimTrailingCarriageReturn(std::string value) {
     if (!value.empty() && value.back() == '\r') {
         value.pop_back();
@@ -23,8 +26,23 @@ std::string trimTrailingCarriageReturn(std::string value) {
     return value;
 }
 
+std::string trimAscii(std::string value) {
+    auto isSpace = [](unsigned char ch) { return std::isspace(ch) != 0; };
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), [&](unsigned char ch) {
+        return !isSpace(ch);
+    }));
+    value.erase(std::find_if(value.rbegin(), value.rend(), [&](unsigned char ch) {
+        return !isSpace(ch);
+    }).base(), value.end());
+    return value;
+}
+
 std::string localShellEscape(const fs::path& path) {
     const std::string raw = path.string();
+    return localShellEscape(raw);
+}
+
+std::string localShellEscape(const std::string& raw) {
 #ifdef _WIN32
     std::string escaped = "\"";
     for (char ch : raw) {
@@ -62,6 +80,13 @@ std::string escapedPathOrEmpty(const fs::path& path) {
         return "";
     }
     return localShellEscape(path);
+}
+
+std::string escapedStringOrEmpty(const std::string& value) {
+    if (value.empty()) {
+        return "";
+    }
+    return localShellEscape(value);
 }
 
 }  // namespace
@@ -105,6 +130,7 @@ std::vector<GoldenTestCase> GoldenTestFramework::discoverCases() const {
         testCase.name = baseName;
         testCase.inputPath = entry.path();
         testCase.expectedArtifactPath = resolveExpectedArtifactPath(basePath);
+        testCase.variables = readCaseVariables(basePath.string() + ".config");
         if (!options_.actualArtifactExtension.empty()) {
             testCase.actualArtifactPath = basePath;
             testCase.actualArtifactPath += options_.actualArtifactExtension;
@@ -347,6 +373,35 @@ std::string GoldenTestFramework::readTextFile(const fs::path& path) {
     return buffer.str();
 }
 
+std::unordered_map<std::string, std::string> GoldenTestFramework::readCaseVariables(const fs::path& path) {
+    std::unordered_map<std::string, std::string> variables;
+    if (!fs::exists(path)) {
+        return variables;
+    }
+
+    std::istringstream stream(readTextFile(path));
+    std::string line;
+    while (std::getline(stream, line)) {
+        line = trimAscii(trimTrailingCarriageReturn(line));
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+
+        const std::size_t equals = line.find('=');
+        if (equals == std::string::npos) {
+            continue;
+        }
+
+        std::string key = trimAscii(line.substr(0, equals));
+        std::string value = trimAscii(line.substr(equals + 1));
+        if (!key.empty()) {
+            variables[std::move(key)] = std::move(value);
+        }
+    }
+
+    return variables;
+}
+
 GoldenTestFramework::CommandResult GoldenTestFramework::runCommand(
     const std::string& command,
     const std::optional<std::string>& stdinText
@@ -461,6 +516,9 @@ std::string GoldenTestFramework::buildCommand(const std::string& commandTemplate
     command = replaceAll(command, "{executable}", escapedAbsolutePathOrEmpty(testCase.executablePath));
     command = replaceAll(command, "{executable_rel}", escapedPathOrEmpty(testCase.executablePath));
     command = replaceAll(command, "{input_stem}", testCase.name);
+    for (const auto& [key, value] : testCase.variables) {
+        command = replaceAll(command, "{" + key + "}", escapedStringOrEmpty(value));
+    }
     return command;
 }
 
