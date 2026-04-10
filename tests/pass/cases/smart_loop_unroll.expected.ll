@@ -5,18 +5,18 @@ define i32 @main() {
 entry:
   br label %loop
 
-loop:
+loop:                                             ; preds = %body, %entry
   %i = phi i32 [ 0, %entry ], [ %next, %body ]
   %sum = phi i32 [ 0, %entry ], [ %nextsum, %body ]
   %cmp = icmp slt i32 %i, 4
   br i1 %cmp, label %body, label %exit
 
-body:
+body:                                             ; preds = %loop
   %nextsum = add i32 %sum, %i
   %next = add i32 %i, 1
   br label %loop, !llvm.loop !0
 
-exit:
+exit:                                             ; preds = %loop
   ret i32 0
 }
 
