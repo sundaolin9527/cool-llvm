@@ -33,6 +33,7 @@ llvm-pass:
 clean:
 	@echo "Cleaning..."
 	@cd app && $(MAKE) clean
+	@cd lib/runtime && $(MAKE) clean
 	@cd passes && $(MAKE) clean
 	@cd tests/unit && $(MAKE) clean
 	@cd tests/pass && $(MAKE) clean

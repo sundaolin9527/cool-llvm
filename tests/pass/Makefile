@@ -19,6 +19,14 @@ PREPARE_CMD := $(OPT) -load-pass-plugin $(PASS_PLUGIN) -passes=$(PASS_PIPELINE) 
 LINK_CMD := clang++ {actual_artifact_rel} -o {executable_rel}
 RUN_CMD := {executable_rel}
 
+ifeq ($(OS),Windows_NT)
+RM_FILES = cmd /c del /q /f $(TARGET) $(TARGET).exe $(OBJS) cases\\*.actual.ll 2>nul
+RM_DIRS = cmd /c rmdir /s /q .artifacts 2>nul
+else
+RM_FILES = rm -f $(TARGET) $(OBJS) cases/*.actual.ll
+RM_DIRS = rm -rf .artifacts
+endif
+
 .PHONY: build run clean
 
 build:
@@ -38,4 +46,5 @@ golden_test_framework.o: ../golden_test_framework.cpp ../golden_test_framework.h
 	$(CXX) $(CXXFLAGS) -c ../golden_test_framework.cpp -o $@
 
 clean:
-	rm -f $(TARGET) $(OBJS) cases/*.actual.ll
+	-$(RM_FILES)
+	-$(RM_DIRS)
