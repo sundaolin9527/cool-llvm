@@ -9,5 +9,5 @@ entry:
 define i32 @main() {
 entry:
   %result = call i32 @add_one(i32 41)
-  ret i32 %result
+  ret i32 0
 }

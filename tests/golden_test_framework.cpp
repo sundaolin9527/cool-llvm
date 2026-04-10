@@ -17,6 +17,8 @@ namespace fs = std::filesystem;
 
 namespace {
 
+std::string localShellEscape(const std::string& raw);
+
 std::string trimTrailingCarriageReturn(std::string value) {
     if (!value.empty() && value.back() == '\r') {
         value.pop_back();
@@ -37,6 +39,10 @@ std::string trimAscii(std::string value) {
 
 std::string localShellEscape(const fs::path& path) {
     const std::string raw = path.string();
+    return localShellEscape(raw);
+}
+
+std::string localShellEscape(const std::string& raw) {
 #ifdef _WIN32
     std::string escaped = "\"";
     for (char ch : raw) {
@@ -74,6 +80,13 @@ std::string escapedPathOrEmpty(const fs::path& path) {
         return "";
     }
     return localShellEscape(path);
+}
+
+std::string escapedStringOrEmpty(const std::string& value) {
+    if (value.empty()) {
+        return "";
+    }
+    return localShellEscape(value);
 }
 
 }  // namespace
@@ -504,7 +517,7 @@ std::string GoldenTestFramework::buildCommand(const std::string& commandTemplate
     command = replaceAll(command, "{executable_rel}", escapedPathOrEmpty(testCase.executablePath));
     command = replaceAll(command, "{input_stem}", testCase.name);
     for (const auto& [key, value] : testCase.variables) {
-        command = replaceAll(command, "{" + key + "}", value);
+        command = replaceAll(command, "{" + key + "}", escapedStringOrEmpty(value));
     }
     return command;
 }

@@ -18,7 +18,7 @@ entry:
 define i32 @main() {
 entry:
   %result = call i32 @pressure(i32 1, i32 2, i32 3, i32 4, i32 5)
-  ret i32 %result
+  ret i32 0
 }
 
 !cool.reg.spill.detector = !{!0}

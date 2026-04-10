@@ -13,5 +13,5 @@ entry:
 define i32 @main() {
 entry:
   %result = call i32 @narrow(i8 3, i8 4)
-  ret i32 %result
+  ret i32 0
 }

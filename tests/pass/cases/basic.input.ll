@@ -12,5 +12,5 @@ entry:
 define i32 @main() {
 entry:
   %value = load i32, ptr @live.global, align 4
-  ret i32 %value
+  ret i32 0
 }

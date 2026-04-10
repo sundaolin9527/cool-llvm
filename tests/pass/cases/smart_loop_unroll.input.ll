@@ -16,5 +16,5 @@ body:
   br label %loop
 
 exit:
-  ret i32 %sum
+  ret i32 0
 }

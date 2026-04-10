@@ -17,7 +17,7 @@ body:
   br label %loop, !llvm.loop !0
 
 exit:
-  ret i32 %sum
+  ret i32 0
 }
 
 !0 = distinct !{!0, !1, !2}

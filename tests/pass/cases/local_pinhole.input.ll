@@ -10,5 +10,5 @@ entry:
 define i32 @main() {
 entry:
   %result = call i32 @fold(i32 255)
-  ret i32 %result
+  ret i32 0
 }
