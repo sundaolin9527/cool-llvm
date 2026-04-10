@@ -657,10 +657,10 @@ str_const1:
 	.word	-1
 str_const0:
 	.word	4
-	.word	16
+	.word	18
 	.word	String_dispTab
 	.word	int_const21
-	.ascii	"/opt/sundaolin/cool/tests/unit/cases/example.cl"
+	.ascii	"/opt/sundaolin/cool-llvm/tests/unit/cases/example.cl"
 	.byte	0	
 	.align	2
 	.word	-1
@@ -668,7 +668,7 @@ int_const21:
 	.word	2
 	.word	4
 	.word	Int_dispTab
-	.word	47
+	.word	52
 	.word	-1
 int_const20:
 	.word	2
