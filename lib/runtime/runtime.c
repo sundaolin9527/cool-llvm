@@ -5,11 +5,11 @@
 #include "runtime.h"
 
 // ========== 虚函数表声明（这些在IR中已定义，这里只是声明）==========
-extern void** _ZTV6Object;   // Object虚表
-extern void** _ZTV3Int;      // Int虚表
-extern void** _ZTV4Bool;     // Bool虚表
-extern void** _ZTV6String;   // String虚表
-extern void** _ZTV2IO;       // IO虚表
+extern void* _ZTV6Object[];   // Object虚表
+extern void* _ZTV3Int[];      // Int虚表
+extern void* _ZTV4Bool[];     // Bool虚表
+extern void* _ZTV6String[];   // String虚表
+extern void* _ZTV2IO[];       // IO虚表
 
 // ========== 辅助函数 ==========
 

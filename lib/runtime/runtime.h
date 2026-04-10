@@ -70,11 +70,11 @@ _Static_assert(sizeof(CoolIO) == 8, "CoolIO layout mismatch");
 #endif
 
 // ========== 虚函数表声明（这些在IR中已定义）==========
-extern void** _ZTV6Object;
-extern void** _ZTV3Int;
-extern void** _ZTV4Bool;
-extern void** _ZTV6String;
-extern void** _ZTV2IO;
+extern void* _ZTV6Object[];
+extern void* _ZTV3Int[];
+extern void* _ZTV4Bool[];
+extern void* _ZTV6String[];
+extern void* _ZTV2IO[];
 
 // ========== Object 方法 ==========
 COOL_EXPORT void* Object_copy(void* this_ptr);

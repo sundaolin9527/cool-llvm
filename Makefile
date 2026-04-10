@@ -2,8 +2,10 @@
 
 UNIT_TEST_FILTER := $(strip $(filter-out unit-test,$(MAKECMDGOALS)))
 
+ifneq ($(filter unit-test,$(MAKECMDGOALS)),)
 ifneq ($(UNIT_TEST_FILTER),)
 $(foreach goal,$(UNIT_TEST_FILTER),$(eval .PHONY: $(goal))$(eval $(goal): ; @:))
+endif
 endif
 
 all: compiler-all llvm-pass
