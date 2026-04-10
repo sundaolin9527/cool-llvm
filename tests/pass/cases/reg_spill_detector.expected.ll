@@ -8,11 +8,21 @@ entry:
   %v3 = add i32 %c, 3
   %v4 = add i32 %d, 4
   %v5 = add i32 %e, 5
-  %sum1 = add i32 %v1, %v2
-  %sum2 = add i32 %v3, %v4
-  %sum3 = add i32 %sum1, %sum2
-  %sum4 = add i32 %sum3, %v5
-  ret i32 %sum4
+  %cond = icmp sgt i32 %v1, 0
+  br i1 %cond, label %then, label %else
+
+then:                                             ; preds = %entry
+  %t1 = add i32 %v2, %v3
+  br label %merge
+
+else:                                             ; preds = %entry
+  %e1 = add i32 %v3, %v4
+  br label %merge
+
+merge:                                            ; preds = %else, %then
+  %m = phi i32 [ %t1, %then ], [ %e1, %else ]
+  %sum = add i32 %m, %v5
+  ret i32 %sum
 }
 
 define i32 @main() {

@@ -7,6 +7,7 @@
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
 
+#include <optional>
 #include <vector>
 
 namespace {
@@ -14,7 +15,8 @@ namespace {
 // 方案：
 // 1. 先做一个最小但稳定的模式库：专门识别 (X << C) >> C；
 // 2. 当左右移位量一致且都是逻辑移位时，把它化成一次按位与；
-// 3. 这种局部替换天然适合 BasicBlock 粒度，并且非常容易通过文本回归测试验证。
+// 3. 为了便于扩展，匹配逻辑和重写逻辑拆开，后续可以继续接更多 peephole 规则；
+// 4. 这种局部替换天然适合 BasicBlock 粒度，并且非常容易通过文本回归测试验证。
 class LocalPinholeOptimizationPass : public llvm::PassInfoMixin<LocalPinholeOptimizationPass> {
 public:
     llvm::PreservedAnalyses run(llvm::Function& function, llvm::FunctionAnalysisManager&) {
@@ -37,10 +39,17 @@ public:
     }
 
 private:
-    static bool tryFold(llvm::Instruction& instruction) {
+    struct ShiftMaskPattern {
+        llvm::BinaryOperator* shiftRight = nullptr;
+        llvm::BinaryOperator* shiftLeft = nullptr;
+        llvm::ConstantInt* shiftAmount = nullptr;
+        llvm::IntegerType* integerType = nullptr;
+    };
+
+    static std::optional<ShiftMaskPattern> matchShiftMaskPattern(llvm::Instruction& instruction) {
         auto* shiftRight = llvm::dyn_cast<llvm::BinaryOperator>(&instruction);
         if (shiftRight == nullptr || shiftRight->getOpcode() != llvm::Instruction::LShr) {
-            return false;
+            return std::nullopt;
         }
 
         auto* shiftLeft = llvm::dyn_cast<llvm::BinaryOperator>(shiftRight->getOperand(0));
@@ -48,35 +57,47 @@ private:
         auto* rightAmount = llvm::dyn_cast<llvm::ConstantInt>(shiftRight->getOperand(1));
         if (shiftLeft == nullptr || shiftLeft->getOpcode() != llvm::Instruction::Shl ||
             leftAmount == nullptr || rightAmount == nullptr) {
-            return false;
+            return std::nullopt;
         }
 
         if (leftAmount->getValue() != rightAmount->getValue()) {
-            return false;
+            return std::nullopt;
         }
 
         auto* integerType = llvm::dyn_cast<llvm::IntegerType>(shiftRight->getType());
         if (integerType == nullptr) {
-            return false;
+            return std::nullopt;
         }
 
         const unsigned int bitWidth = integerType->getBitWidth();
         const uint64_t shiftAmount = rightAmount->getZExtValue();
         if (shiftAmount >= bitWidth) {
+            return std::nullopt;
+        }
+
+        return ShiftMaskPattern{shiftRight, shiftLeft, rightAmount, integerType};
+    }
+
+    static bool tryFold(llvm::Instruction& instruction) {
+        std::optional<ShiftMaskPattern> matched = matchShiftMaskPattern(instruction);
+        if (!matched.has_value()) {
             return false;
         }
 
+        const unsigned int bitWidth = matched->integerType->getBitWidth();
+        const uint64_t shiftAmount = matched->shiftAmount->getZExtValue();
         const llvm::APInt mask = llvm::APInt::getLowBitsSet(bitWidth, bitWidth - shiftAmount);
-        llvm::IRBuilder<> builder(shiftRight);
+
+        llvm::IRBuilder<> builder(matched->shiftRight);
         llvm::Value* replacement = builder.CreateAnd(
-            shiftLeft->getOperand(0),
-            llvm::ConstantInt::get(integerType, mask),
+            matched->shiftLeft->getOperand(0),
+            llvm::ConstantInt::get(matched->integerType, mask),
             "pinhole.mask");
 
-        shiftRight->replaceAllUsesWith(replacement);
-        shiftRight->eraseFromParent();
-        if (shiftLeft->use_empty()) {
-            shiftLeft->eraseFromParent();
+        matched->shiftRight->replaceAllUsesWith(replacement);
+        matched->shiftRight->eraseFromParent();
+        if (matched->shiftLeft->use_empty()) {
+            matched->shiftLeft->eraseFromParent();
         }
         return true;
     }

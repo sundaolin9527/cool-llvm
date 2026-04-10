@@ -12,7 +12,8 @@ namespace {
 // 方案：
 // 1. 针对最稳定的“扩宽计算 -> 截断回原位宽”模式做缩宽；
 // 2. 只有在两个操作数都来自同一窄位宽的 zext/sext，并且结果马上被 trunc 回去时才改写；
-// 3. 这样虽然比完整活跃位域分析保守，但很容易验证正确性，也便于用最小样例驱动。
+// 3. 把“是否可缩宽”的判断拆成独立匹配步骤，便于后续扩展到 PHI、icmp 等更复杂指令；
+// 4. 这样虽然比完整活跃位域分析保守，但能在稳定性和可维护性之间保持平衡。
 class RedundantWidthReductionPass : public llvm::PassInfoMixin<RedundantWidthReductionPass> {
 public:
     llvm::PreservedAnalyses run(llvm::Function& function, llvm::FunctionAnalysisManager&) {
@@ -48,30 +49,31 @@ private:
         }
     }
 
+    static llvm::CastInst* matchReducibleCast(llvm::Value* value, llvm::Type* narrowType, llvm::Type* wideType) {
+        auto* cast = llvm::dyn_cast<llvm::CastInst>(value);
+        if (cast == nullptr || !cast->isIntegerCast()) {
+            return nullptr;
+        }
+
+        if (cast->getSrcTy() != narrowType || cast->getDestTy() != wideType) {
+            return nullptr;
+        }
+        return cast;
+    }
+
     static bool tryReduce(llvm::TruncInst& trunc) {
         auto* wideOp = llvm::dyn_cast<llvm::BinaryOperator>(trunc.getOperand(0));
         if (wideOp == nullptr || !wideOp->hasOneUse() || !isSupportedOpcode(wideOp->getOpcode())) {
             return false;
         }
 
-        auto* leftCast = llvm::dyn_cast<llvm::CastInst>(wideOp->getOperand(0));
-        auto* rightCast = llvm::dyn_cast<llvm::CastInst>(wideOp->getOperand(1));
+        llvm::Type* narrowType = trunc.getType();
+        auto* leftCast = matchReducibleCast(wideOp->getOperand(0), narrowType, wideOp->getType());
+        auto* rightCast = matchReducibleCast(wideOp->getOperand(1), narrowType, wideOp->getType());
         if (leftCast == nullptr || rightCast == nullptr) {
             return false;
         }
-
-        if (!leftCast->isIntegerCast() || !rightCast->isIntegerCast()) {
-            return false;
-        }
         if (leftCast->getOpcode() != rightCast->getOpcode()) {
-            return false;
-        }
-
-        llvm::Type* narrowType = trunc.getType();
-        if (leftCast->getSrcTy() != narrowType || rightCast->getSrcTy() != narrowType) {
-            return false;
-        }
-        if (leftCast->getDestTy() != wideOp->getType() || rightCast->getDestTy() != wideOp->getType()) {
             return false;
         }
 
@@ -83,6 +85,7 @@ private:
             wideOp->getName() + ".narrow");
 
         if (auto* reducedOp = llvm::dyn_cast<llvm::BinaryOperator>(reduced)) {
+            // IR flag 例如 `nsw/nuw/exact` 会影响后续优化，缩宽后应尽量继承。
             reducedOp->copyIRFlags(wideOp);
         }
 

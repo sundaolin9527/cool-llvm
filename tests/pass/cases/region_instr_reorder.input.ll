@@ -5,7 +5,8 @@ entry:
   %z = add i32 %b, %c
   %x = add i32 %a, 1
   %y = add i32 %x, 2
-  %r = add i32 %y, %z
+  %t = mul i32 %y, 3
+  %r = add i32 %t, %z
   ret i32 %r
 }
 

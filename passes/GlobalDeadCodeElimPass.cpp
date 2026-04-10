@@ -1,5 +1,6 @@
 #include <llvm/Config/llvm-config.h>
 #include <llvm/IR/Constants.h>
+#include <llvm/IR/Function.h>
 #include <llvm/IR/GlobalAlias.h>
 #include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/Module.h>
@@ -14,7 +15,8 @@ namespace {
 // 方案：
 // 1. 先把外部可见符号、LLVM 保留符号和 @llvm.used 中出现的实体当作根集合保护起来；
 // 2. 再做一个迭代删除：只要某个本地符号已经没有任何使用点，就直接删除；
-// 3. 由于删除会级联减少其他全局对象的 use 数，这种简单迭代就能稳定清掉最小测试里的整片死代码。
+// 3. 为了覆盖 bitcast/gep/常量聚合这种常见包装形式，需要递归剥离常量表达式；
+// 4. 由于删除会级联减少其他全局对象的 use 数，工作列表式迭代可以稳定清掉整片死代码。
 class GlobalDeadCodeElimPass : public llvm::PassInfoMixin<GlobalDeadCodeElimPass> {
 public:
     llvm::PreservedAnalyses run(llvm::Module& module, llvm::ModuleAnalysisManager&) {
@@ -34,11 +36,30 @@ public:
     }
 
 private:
+    static void collectReferencedGlobals(
+        const llvm::Constant& constant,
+        std::unordered_set<const llvm::GlobalValue*>& protectedValues
+    ) {
+        if (const auto* globalValue = llvm::dyn_cast<llvm::GlobalValue>(&constant)) {
+            protectedValues.insert(globalValue);
+            return;
+        }
+
+        // `llvm.used` 里经常塞 bitcast、addrspacecast、数组等常量包装，这里统一递归展开。
+        for (const llvm::Use& operand : constant.operands()) {
+            const auto* nestedConstant = llvm::dyn_cast<llvm::Constant>(operand.get());
+            if (nestedConstant != nullptr) {
+                collectReferencedGlobals(*nestedConstant, protectedValues);
+            }
+        }
+    }
+
     static void collectProtectedValues(
         llvm::Module& module,
         std::unordered_set<const llvm::GlobalValue*>& protectedValues
     ) {
         for (llvm::GlobalValue& globalValue : module.global_values()) {
+            // 非本地链接实体可能从当前模块外部被引用，不能仅凭本模块内 use 计数删除。
             if (!globalValue.hasLocalLinkage() || globalValue.getName().starts_with("llvm.")) {
                 protectedValues.insert(&globalValue);
             }
@@ -64,18 +85,16 @@ private:
         }
 
         for (llvm::Value* operand : array->operands()) {
-            const llvm::Value* current = operand;
-            while (auto* expr = llvm::dyn_cast<llvm::ConstantExpr>(current)) {
-                current = expr->getOperand(0);
-            }
-
-            if (const auto* globalValue = llvm::dyn_cast<llvm::GlobalValue>(current)) {
-                protectedValues.insert(globalValue);
+            if (const auto* constant = llvm::dyn_cast<llvm::Constant>(operand)) {
+                collectReferencedGlobals(*constant, protectedValues);
             }
         }
     }
 
-    static bool canErase(const llvm::GlobalValue& globalValue, const std::unordered_set<const llvm::GlobalValue*>& protectedValues) {
+    static bool canErase(
+        const llvm::GlobalValue& globalValue,
+        const std::unordered_set<const llvm::GlobalValue*>& protectedValues
+    ) {
         return globalValue.hasLocalLinkage() &&
                !globalValue.getName().starts_with("llvm.") &&
                protectedValues.count(&globalValue) == 0 &&
@@ -108,6 +127,14 @@ private:
             if (function.isDeclaration()) {
                 continue;
             }
+
+            // 有副作用的入口函数通常会被真实调用点保活；这里只额外保护“显式标记不可删”的情形。
+            if (function.hasFnAttribute(llvm::Attribute::NoInline) &&
+                function.hasFnAttribute(llvm::Attribute::OptimizeNone) &&
+                protectedValues.count(&function) != 0) {
+                continue;
+            }
+
             if (canErase(function, protectedValues)) {
                 toErase.push_back(&function);
             }

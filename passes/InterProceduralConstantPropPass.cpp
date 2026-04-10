@@ -3,6 +3,7 @@
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
 
@@ -11,7 +12,8 @@ namespace {
 // 方案：
 // 1. 以 CGSCC 为遍历单位，保证调用图顺序和递归场景的处理入口是正确的；
 // 2. 仅在“所有直接调用点都为同一个常量实参”时，把该形参替换成常量；
-// 3. 这里故意做成保守实现：遇到地址逃逸、间接调用或非常量调用点就放弃传播，优先保证稳定性。
+// 3. 对地址逃逸、间接调用、无调用点和 poison/undef 常量保持保守，优先保证稳定性；
+// 4. 传播时不修改函数签名，只在函数体内做 SSA 替换，避免 CGSCC 更新成本失控。
 class InterProceduralConstantPropPass
     : public llvm::PassInfoMixin<InterProceduralConstantPropPass> {
 public:
@@ -34,14 +36,25 @@ public:
     }
 
 private:
+    static bool isEligibleFunction(const llvm::Function& function) {
+        return !function.isDeclaration() &&
+               !function.isVarArg() &&
+               !function.hasAddressTaken();
+    }
+
     static bool propagateConstants(llvm::Function& function) {
         bool changed = false;
         for (llvm::Argument& argument : function.args()) {
+            if (argument.use_empty()) {
+                continue;
+            }
+
             llvm::Constant* constant = findSingleConstantArgument(function, argument.getArgNo());
             if (constant == nullptr) {
                 continue;
             }
 
+            // 只在函数体内替换 SSA use，不触碰调用点参数列表。
             argument.replaceAllUsesWith(constant);
             changed = true;
         }
@@ -49,8 +62,12 @@ private:
     }
 
     static llvm::Constant* findSingleConstantArgument(llvm::Function& function, unsigned int argumentIndex) {
+        if (!isEligibleFunction(function)) {
+            return nullptr;
+        }
+
         llvm::Constant* sharedConstant = nullptr;
-        bool sawDirectCall = false;
+        llvm::SmallVector<llvm::CallBase*, 8> directCalls;
 
         for (llvm::User* user : function.users()) {
             auto* call = llvm::dyn_cast<llvm::CallBase>(user);
@@ -67,22 +84,20 @@ private:
             }
 
             auto* constant = llvm::dyn_cast<llvm::Constant>(call->getArgOperand(argumentIndex));
-            if (constant == nullptr) {
+            if (constant == nullptr || llvm::isa<llvm::UndefValue>(constant) || llvm::isa<llvm::PoisonValue>(constant)) {
                 return nullptr;
             }
 
-            if (!sawDirectCall) {
+            if (sharedConstant == nullptr) {
                 sharedConstant = constant;
-                sawDirectCall = true;
-                continue;
-            }
-
-            if (sharedConstant != constant) {
+            } else if (sharedConstant != constant) {
                 return nullptr;
             }
+
+            directCalls.push_back(call);
         }
 
-        return sawDirectCall ? sharedConstant : nullptr;
+        return directCalls.empty() ? nullptr : sharedConstant;
     }
 };
 
