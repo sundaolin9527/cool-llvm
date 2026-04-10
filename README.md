@@ -38,6 +38,7 @@ make all
 
 ```bash
 make help
+make llvm-pass
 make cgen
 make cgen-llvm
 make runtime-lib
@@ -48,6 +49,9 @@ make runtime-lib
 - `app/cgen`：传统代码生成器目标
 - `app/cgen-llvm`：LLVM IR 代码生成器
 - `lib/runtime/libruntime.so`：运行时库
+- `passes/libCoolModuleSummaryPass.so`：独立 LLVM Pass 插件
+
+`passes/Makefile` 会自动扫描 `passes/*.cpp` 并为每个源码生成同名共享库，例如 `FooPass.cpp -> libFooPass.so`。
 
 如果你切换了架构、LLVM 版本或编译环境，先清理再重建：
 
@@ -75,14 +79,22 @@ make unit-test cells.cl
 
 `unit-test` 支持按文件名或关键字过滤。
 
-### 2.3 仅构建测试 runner
+### 2.3 运行 LLVM Pass 测试
+
+```bash
+make test-pass
+```
+
+这个目标会先构建 `passes/` 下的 pass 插件，再对 `tests/pass/cases/*.input.ll` 执行 `opt`，最后把输出与 `.expected.ll` 做文本比对。
+
+### 2.4 仅构建测试 runner
 
 ```bash
 cd tests/unit
 make build
 ```
 
-### 2.4 直接运行测试 runner
+### 2.5 直接运行测试 runner
 
 ```bash
 cd tests/unit
@@ -92,7 +104,7 @@ cd tests/unit
 ./unit_test_runner --verbose
 ```
 
-### 2.5 手动验证 LLVM 生成链路
+### 2.6 手动验证 LLVM 生成链路
 
 如果你只想验证编译器输出的 IR 能否链接运行：
 
@@ -123,7 +135,9 @@ clang++ ../tests/unit/cases/example.actual.ll \
 - `app/`：编译器主程序与 LLVM 后端实现
 - `bin/.i686/`：课程提供的 `lexer`、`parser`、`semant` 等工具链
 - `lib/runtime/`：运行时库源码与 `libruntime.so`
+- `passes/`：LLVM 16 Pass 插件源码与独立构建脚本
 - `tests/unit/`：可执行结果 golden tests
+- `tests/pass/`：LLVM Pass 的文本回归测试
 - `tests/llvm_ir/`：手工 LLVM IR / C 混合链接示例
 - `examples/`：COOL 示例程序
 - `doc/`：课程资料与实验记录
@@ -133,8 +147,10 @@ clang++ ../tests/unit/cases/example.actual.ll \
 - `make all`：构建主要编译目标
 - `make cgen`：构建传统代码生成器
 - `make cgen-llvm`：构建 LLVM 代码生成器
+- `make llvm-pass`：构建独立 LLVM Pass 插件
 - `make runtime-lib`：构建运行时库
 - `make test-units`：运行全部单元测试
+- `make test-pass`：运行 LLVM Pass 文本测试
 - `make unit-test <filter>`：运行指定测试
 - `make dotest`：运行旧的 `example.cl` 演示链路
 - `make test-llvm`：对 `app/example.cl` 做最小 LLVM 生成验证
