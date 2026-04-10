@@ -68,7 +68,7 @@ make all
 make test-units
 ```
 
-这个目标会先构建 `cgen-llvm` 和运行时库，再进入 `tests/unit` 执行 golden tests。
+这个目标会先构建 `cgen-llvm` 和运行时库，再进入 `tests/unit` 执行执行产物 golden tests。
 
 ### 2.2 运行单个或一组测试
 
@@ -85,7 +85,7 @@ make unit-test cells.cl
 make test-pass
 ```
 
-这个目标会先构建 `passes/` 下的 pass 插件，再对 `tests/pass/cases/*.input.ll` 执行 `opt`，最后把输出与 `.expected.ll` 做文本比对。
+这个目标会先构建 `passes/` 下的 pass 插件，再对 `tests/pass/cases/*.input.ll` 执行 `opt`，最后同时校验 `.expected.ll` 文本输出和 `.expected.txt` 运行结果。
 
 ### 2.4 仅构建测试 runner
 
@@ -104,7 +104,18 @@ cd tests/unit
 ./unit_test_runner --verbose
 ```
 
-### 2.6 手动验证 LLVM 生成链路
+### 2.6 测试框架组织
+
+`tests/unit` 和 `tests/pass` 现在共用 `tests/` 根目录下的通用 golden 测试框架：
+
+- `tests/golden_test_framework.h`
+- `tests/golden_test_framework.cpp`
+- `tests/golden_test_main.cpp`
+- `tests/unit_test_suite_main.cpp`
+
+两个 suite 共用同一套框架实现；`unit` 额外有一个轻量包装入口用于保留 `./unit_test_runner` 的直接使用方式。
+
+### 2.7 手动验证 LLVM 生成链路
 
 如果你只想验证编译器输出的 IR 能否链接运行：
 

@@ -1,3 +1,6 @@
+CXX ?= g++
+CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -pedantic
+
 LLVM_VERSION ?= 16
 LLVM_CONFIG ?= llvm-config-$(LLVM_VERSION)
 
@@ -10,25 +13,29 @@ PASS_DIR := $(ROOT_DIR)/passes
 OPT := $(shell $(LLVM_CONFIG) --bindir)/opt
 PASS_PLUGIN ?= $(PASS_DIR)/libCoolModuleSummaryPass.so
 PASS_PIPELINE ?= cool-module-summary
-
-CASE_INPUTS := $(sort $(wildcard cases/*.input.ll))
-CASE_OUTPUTS := $(patsubst %.input.ll,%.actual.ll,$(CASE_INPUTS))
+TARGET := pass_test_runner
+OBJS := golden_test_main.o golden_test_framework.o
+PREPARE_CMD := $(OPT) -load-pass-plugin $(PASS_PLUGIN) -passes=$(PASS_PIPELINE) -S {input_rel} -o {actual_artifact_rel}
+LINK_CMD := clang++ {actual_artifact_rel} -o {executable_rel}
+RUN_CMD := {executable_rel}
 
 .PHONY: build run clean
 
 build:
 	@cd $(PASS_DIR) && $(MAKE) all
+	@$(MAKE) $(TARGET)
 
-run: build $(CASE_OUTPUTS)
-	@set -e; \
-	for actual in $(CASE_OUTPUTS); do \
-		expected=$${actual%.actual.ll}.expected.ll; \
-		diff -u "$$expected" "$$actual"; \
-	done; \
-	echo "pass tests passed: $(words $(CASE_OUTPUTS))"
+run: build
+	./$(TARGET) --repo-root ../.. --suite-dir . --cases-dir cases --artifacts-dir .artifacts --input-ext .input.ll --expected-artifact-ext .expected.ll --actual-artifact-ext .actual.ll --expected-output-ext .expected.txt --prepare-output file --prepare-cmd "$(PREPARE_CMD)" --link-cmd "$(LINK_CMD)" --run-cmd "$(RUN_CMD)"
 
-cases/%.actual.ll: cases/%.input.ll $(PASS_PLUGIN)
-	$(OPT) -load-pass-plugin $(PASS_PLUGIN) -passes=$(PASS_PIPELINE) -S $< -o $@
+$(TARGET): $(OBJS)
+	$(CXX) $(CXXFLAGS) $(OBJS) -o $(TARGET)
+
+golden_test_main.o: ../golden_test_main.cpp ../golden_test_framework.h
+	$(CXX) $(CXXFLAGS) -c ../golden_test_main.cpp -o $@
+
+golden_test_framework.o: ../golden_test_framework.cpp ../golden_test_framework.h
+	$(CXX) $(CXXFLAGS) -c ../golden_test_framework.cpp -o $@
 
 clean:
-	rm -f cases/*.actual.ll
+	rm -f $(TARGET) $(OBJS) cases/*.actual.ll

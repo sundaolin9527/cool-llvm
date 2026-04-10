@@ -2,8 +2,7 @@ CXX ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -pedantic
 
 TARGET := unit_test_runner
-SRCS := ir_golden_test_main.cpp ir_test_framework.cpp
-OBJS := $(SRCS:.cpp=.o)
+OBJS := unit_test_suite_main.o golden_test_framework.o
 TEST_FILTER ?=
 
 ifeq ($(OS),Windows_NT)
@@ -24,8 +23,11 @@ run: $(TARGET)
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $(TARGET)
 
-%.o: %.cpp ir_test_framework.h
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+unit_test_suite_main.o: ../unit_test_suite_main.cpp ../golden_test_framework.h
+	$(CXX) $(CXXFLAGS) -c ../unit_test_suite_main.cpp -o $@
+
+golden_test_framework.o: ../golden_test_framework.cpp ../golden_test_framework.h
+	$(CXX) $(CXXFLAGS) -c ../golden_test_framework.cpp -o $@
 
 clean:
 	-$(RM_FILES)
