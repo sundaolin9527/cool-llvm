@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace {
 
@@ -130,16 +131,20 @@ private:
         std::unordered_map<const llvm::BasicBlock*, BlockLivenessSummary> summaries;
         std::unordered_map<const llvm::BasicBlock*, ValueSet> liveIn;
         std::unordered_map<const llvm::BasicBlock*, ValueSet> liveOut;
+        std::vector<const llvm::BasicBlock*> reversePostOrderLikeBlocks;
 
         for (const llvm::BasicBlock& block : function) {
             summaries.emplace(&block, summarizeBlock(block));
+            reversePostOrderLikeBlocks.push_back(&block);
         }
 
         bool changed = false;
         do {
             changed = false;
-            for (auto blockIterator = function.rbegin(); blockIterator != function.rend(); ++blockIterator) {
-                const llvm::BasicBlock& block = *blockIterator;
+            for (auto blockIterator = reversePostOrderLikeBlocks.rbegin();
+                 blockIterator != reversePostOrderLikeBlocks.rend();
+                 ++blockIterator) {
+                const llvm::BasicBlock& block = **blockIterator;
                 ValueSet nextLiveOut;
 
                 for (const llvm::BasicBlock* successor : llvm::successors(&block)) {
