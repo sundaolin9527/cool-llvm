@@ -1,18 +1,10 @@
 ; ModuleID = 'cases/basic.input.ll'
 source_filename = "basic.input.ll"
 
-declare void @helper()
+@live.global = internal global i32 5, align 4
 
 define i32 @main() {
 entry:
-  ret i32 0
+  %value = load i32, ptr @live.global, align 4
+  ret i32 %value
 }
-
-define void @worker() {
-entry:
-  ret void
-}
-
-!cool.module.summary = !{!0}
-
-!0 = !{!"cool-module-summary", i32 2}

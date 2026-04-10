@@ -8,6 +8,7 @@
 - `cases/*.expected.ll`：期望的 pass 文本输出
 - `cases/*.actual.ll`：测试运行时生成的实际输出
 - `cases/*.expected.txt`：变换后程序标准输出的期望结果
+- `cases/*.config`：当前 case 对应的 pass 插件和 pipeline 配置
 - `Makefile`：构建 pass 插件并调用公共测试 runner
 
 ## 运行方式
@@ -26,11 +27,11 @@ make run
 
 ## 测试机制
 
-测试会先构建 `passes/libCoolModuleSummaryPass.so`，然后使用 `opt` 执行：
+测试会先构建 `passes/*.so`，再按每个 case 自己的 `.config` 使用 `opt` 执行对应 pass，例如：
 
 ```bash
-opt -load-pass-plugin ../../passes/libCoolModuleSummaryPass.so \
-    -passes=cool-module-summary -S cases/basic.input.ll -o cases/basic.actual.ll
+opt -load-pass-plugin ../../passes/libGlobalDeadCodeElimPass.so \
+    -passes=global-dead-code-elim -S cases/basic.input.ll -o cases/basic.actual.ll
 ```
 
 随后会继续把 `.actual.ll` 链接成可执行文件并运行，最后同时校验：
@@ -38,8 +39,7 @@ opt -load-pass-plugin ../../passes/libCoolModuleSummaryPass.so \
 - `.expected.ll` 与 `.actual.ll` 的文本内容
 - `.expected.txt` 与程序标准输出
 
-如果后续新增其他 pass，也可以在执行时覆盖变量：
+如果后续新增其他 pass，推荐继续沿用每个 case 一个 `.config` 的方式；配置文件使用简单的 `key=value` 格式，目前支持：
 
-```bash
-make run PASS_PLUGIN=../../passes/libMyAnalysisPass.so PASS_PIPELINE=my-analysis-pass
-```
+- `case_plugin=../../passes/libMyAnalysisPass.so`
+- `case_pipeline=function(my-analysis-pass)`

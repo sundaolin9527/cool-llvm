@@ -9,15 +9,19 @@
 
 ## 当前 pass
 
-当前示例 pass 名称为 `cool-module-summary`，源码位于 `CoolModuleSummaryPass.cpp`，基于 LLVM 16 的 New Pass Manager。
-它会扫描模块中的已定义函数，并向模块写入一段命名元数据：
+当前目录保留了一个示例 pass `CoolModuleSummaryPass.cpp`，同时新增了 7 个与作业要求对应的 pass：
 
-```llvm
-!cool.module.summary = !{!0}
-!0 = !{!"cool-module-summary", i32 <defined_function_count>}
-```
+- `GlobalDeadCodeElimPass.cpp`
+- `InterProceduralConstantPropPass.cpp`
+- `RedundantWidthReductionPass.cpp`
+- `SmartLoopUnrollPass.cpp`
+- `RegionBasedInstrReorderingPass.cpp`
+- `LocalPinholeOptimizationPass.cpp`
+- `RegSpillDetectorPass.cpp`
 
-这个行为足够稳定，便于后续做文本测试，也方便你把它替换成真正业务 pass。
+这些 pass 都基于 LLVM 16 的 New Pass Manager 插件接口实现，测试时按 case 单独加载对应 `.so` 和 pipeline。
+
+其中 `RegSpillDetectorPass` 由于当前测试链路停在 `opt`/LLVM IR，没有真正进入 Machine IR，因此采用了“IR 级活跃值近似寄存器压力”的前置探测方案，并把结果写入命名元数据。
 
 ## 构建
 
@@ -41,8 +45,8 @@ make
 
 ```bash
 opt-16 \
-  -load-pass-plugin ./libCoolModuleSummaryPass.so \
-  -passes=cool-module-summary \
+  -load-pass-plugin ./libGlobalDeadCodeElimPass.so \
+  -passes=global-dead-code-elim \
   -S ../tests/pass/cases/basic.input.ll \
   -o /tmp/basic.actual.ll
 ```
