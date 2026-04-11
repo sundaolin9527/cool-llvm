@@ -52,6 +52,7 @@ make runtime-lib
 - `passes/libCoolModuleSummaryPass.so`：独立 LLVM Pass 插件
 
 `passes/Makefile` 会自动扫描 `passes/*.cpp` 并为每个源码生成同名共享库，例如 `FooPass.cpp -> libFooPass.so`。
+`lib/runtime/Makefile` 会同时编译 `lib/runtime/` 和 `lib/gc/` 下的源码，并把 GC 核心实现一起链接进 `libruntime.so`。
 
 如果你切换了架构、LLVM 版本或编译环境，先清理再重建：
 
@@ -154,6 +155,20 @@ clang++ ../tests/unit/cases/example.actual.ll \
 ../tests/unit/.artifacts/example
 ```
 
+### 2.9 CI
+
+仓库已经提供 Gitee Go 流水线配置 `/.workflow/ci.yml`，当前按 Ubuntu 20.04 + LLVM 16.0.6 约束执行。
+
+默认流水线会调用：
+
+- `scripts/ci/install_ubuntu2004_llvm1606.sh`
+- `make all`
+- `make runtime-lib`
+- `make test-units`
+- `make test-pass`
+
+当前配置使用 `shell@agent`，因此需要在 Gitee Go 中准备一个 Ubuntu 20.04 主机组，并把 `/.workflow/ci.yml` 里的 `hostGroupID` 改成你实际的主机组 ID。
+
 ## 3. 项目细节
 
 ### 3.1 项目目标
@@ -165,7 +180,9 @@ clang++ ../tests/unit/cases/example.actual.ll \
 - `app/`：编译器主程序与 LLVM 后端实现
 - `bin/.i686/`：课程提供的 `lexer`、`parser`、`semant` 等工具链
 - `lib/runtime/`：运行时库源码与 `libruntime.so`
+- `lib/gc/`：GC 核心算法实现，当前运行时会从这里链接垃圾回收逻辑
 - `passes/`：LLVM 16 Pass 插件源码与独立构建脚本
+- `scripts/ci/`：Gitee CI 依赖安装与构建测试脚本
 - `tests/unit/`：可执行结果 golden tests
 - `tests/unit/cases/`：当前实际维护的 19 个可执行 COOL golden case
 - `tests/pass/`：LLVM Pass 的文本回归测试
@@ -190,7 +207,3 @@ clang++ ../tests/unit/cases/example.actual.ll \
 - `app/Makefile` 明确要求 `llvm-config-16` 在 PATH 中可见。
 - 测试 runner 默认会给被测程序输入 `q\n`，便于退出交互式示例。
 - 运行时库当前生成 Linux 共享库 `libruntime.so`，因此不建议把原生 Windows 作为首选部署平台。
-
-## 4. TODO LIST
-- 有内存泄露问题，需要实现 gc 算法，优先考虑三色增量gc，可参考luajit 2.1 (单线程的gc)
-- ci
