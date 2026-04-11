@@ -13,6 +13,7 @@ OBJS = runtime.o
 ifeq ($(OS),Windows_NT)
 RM_FILES = cmd /c "if exist runtime.o del /q /f runtime.o & if exist $(TARGET) del /q /f $(TARGET)" 2>nul
 else
+CFLAGS += -fPIC
 RM_FILES = rm -f $(OBJS) $(TARGET)
 endif
 
@@ -25,7 +26,7 @@ $(GC_LIB):
 	@echo "Missing $(GC_LIB). Build it first with: make -C ../gc all"
 	@false
 
-%.o: %.c runtime.h
+%.o: %.c runtime.h Makefile
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
