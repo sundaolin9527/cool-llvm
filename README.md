@@ -68,7 +68,8 @@ make all
 make test-units
 ```
 
-这个目标会先构建 `cgen-llvm` 和运行时库，再进入 `tests/unit` 执行执行产物 golden tests。
+这个目标会先构建 `cgen-llvm` 和运行时库，再进入 `tests/unit` 执行可执行产物 golden tests。
+当前默认会从 `tests/unit/cases/` 发现并执行 19 个 `.cl` 用例。
 
 ### 2.2 运行单个或一组测试
 
@@ -99,12 +100,30 @@ make build
 ```bash
 cd tests/unit
 ./unit_test_runner
-./unit_test_runner --filter smoke
+./unit_test_runner --filter graph
 ./unit_test_runner --list
 ./unit_test_runner --verbose
+./unit_test_runner --program-input "q\n"
 ```
 
-### 2.6 测试框架组织
+### 2.6 查看已发现用例
+
+当你新增、迁移或同步用例后，建议先列出 runner 实际发现的测试，再决定是否继续跑全量：
+
+```bash
+cd tests/unit
+./unit_test_runner --list
+```
+
+如果 `--list` 输出的总数和你预期不一致，先检查：
+
+- 用例是否位于 `tests/unit/cases/`
+- 是否同时存在 `name.cl` 和非空的 `name.expected.txt`
+- 文件名是否同名配对
+
+更细的用例维护约定可以参考 `tests/unit/cases/README.md`。
+
+### 2.7 测试框架组织
 
 `tests/unit` 和 `tests/pass` 现在共用 `tests/` 根目录下的通用 golden 测试框架：
 
@@ -115,7 +134,7 @@ cd tests/unit
 
 两个 suite 共用同一套框架实现；`unit` 额外有一个轻量包装入口用于保留 `./unit_test_runner` 的直接使用方式。
 
-### 2.7 手动验证 LLVM 生成链路
+### 2.8 手动验证 LLVM 生成链路
 
 如果你只想验证编译器输出的 IR 能否链接运行：
 
@@ -148,9 +167,10 @@ clang++ ../tests/unit/cases/example.actual.ll \
 - `lib/runtime/`：运行时库源码与 `libruntime.so`
 - `passes/`：LLVM 16 Pass 插件源码与独立构建脚本
 - `tests/unit/`：可执行结果 golden tests
+- `tests/unit/cases/`：当前实际维护的 19 个可执行 COOL golden case
 - `tests/pass/`：LLVM Pass 的文本回归测试
 - `tests/llvm_ir/`：手工 LLVM IR / C 混合链接示例
-- `examples/`：COOL 示例程序
+- `examples/`：参考 COOL 示例程序；如果需要纳入自动回归，请同步到 `tests/unit/cases/`
 - `doc/`：课程资料与实验记录
 
 ### 3.3 顶层 Makefile 目标
