@@ -76,3 +76,4 @@ printf 'q\n' | ../tests/unit/.artifacts/example
 - `.expected.txt` 只保存最终程序输出，不要混入调试日志。
 - `.actual.ll` 是生成产物，可以保留用于排查问题，但它的内容应该由测试流程更新，而不是手工长期维护。
 - 新增交互式程序时，注意 runner 默认只提供 `q\n` 这一段输入；如果程序需要更多输入，建议调整 runner 命令模板或单独手工验证。
+- `cases/` 目录也可以保留从 `examples/` 同步过来的参考 `.cl` 文件；`make test-units` 默认只执行“带有非空 expectation”的样例，空的 `.expected.txt` 只是占位，不会被当成有效 golden case。

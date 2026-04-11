@@ -390,6 +390,41 @@ llvm::Value* create_default_cool_value(CodeGenerator& generator,
     return create_default_value(llvmType);
 }
 
+llvm::Value* get_or_create_string_constant(CodeGenerator& generator, const std::string& str) {
+    if (llvm::Value* existing = generator.getSymbolTable().getStringValue(str)) {
+        return existing;
+    }
+
+    llvm::Constant* strConst = llvm::ConstantDataArray::getString(
+        generator.getContext().getLLVMContext(),
+        str,
+        true
+    );
+
+    std::hash<std::string> hasher;
+    std::string globalName = ".str." + std::to_string(hasher(str));
+    llvm::GlobalVariable* globalStr = new llvm::GlobalVariable(
+        generator.getModule(),
+        strConst->getType(),
+        true,
+        llvm::GlobalVariable::PrivateLinkage,
+        strConst,
+        globalName
+    );
+
+    llvm::Value* zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(generator.getContext().getLLVMContext()), 0);
+    llvm::Value* indices[] = { zero, zero };
+    llvm::Value* strPtr = generator.getIRBuilder().CreateInBoundsGEP(
+        globalStr->getValueType(),
+        globalStr,
+        indices,
+        "str_ptr"
+    );
+
+    generator.getSymbolTable().registerString(str, strPtr);
+    return strPtr;
+}
+
 void emit_runtime_abort(CodeGenerator& generator) {
     llvm::Function* abortFunc = generator.getModule().getFunction("abort");
     if (abortFunc == nullptr) {
@@ -427,6 +462,48 @@ bool emit_null_receiver_guard(CodeGenerator& generator, llvm::Value* receiver, c
 
     builder.SetInsertPoint(okBlock);
     return true;
+}
+
+llvm::Value* coerce_condition_to_i1(CodeGenerator& generator,
+                                    llvm::Value* value,
+                                    const std::string& name) {
+    if (value == nullptr) {
+        return nullptr;
+    }
+
+    llvm::IRBuilder<>& builder = generator.getIRBuilder();
+    llvm::LLVMContext& ctx = generator.getContext().getLLVMContext();
+
+    if (value->getType()->isIntegerTy(1)) {
+        return value;
+    }
+
+    if (value->getType()->isIntegerTy()) {
+        return builder.CreateICmpNE(
+            value,
+            llvm::ConstantInt::get(value->getType(), 0),
+            name + ".int"
+        );
+    }
+
+    if (value->getType()->isPointerTy()) {
+        return builder.CreateICmpNE(
+            value,
+            llvm::ConstantPointerNull::get(static_cast<llvm::PointerType*>(value->getType())),
+            name + ".ptr"
+        );
+    }
+
+    llvm::Value* asInt = builder.CreatePtrToInt(
+        value,
+        llvm::Type::getInt64Ty(ctx),
+        name + ".cast"
+    );
+    return builder.CreateICmpNE(
+        asInt,
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), 0),
+        name + ".generic"
+    );
 }
 
 }
@@ -1220,9 +1297,20 @@ llvm::Value *CodeGenerator::emit_new__class(new__class *new_class)
     std::cout << "emit_new__class" << std::endl;
     #endif
     if (new_class == nullptr) return nullptr;
-    
-    std::string class_name_str = new_class->type_name->get_string();
+
+    if (new_class->type_name == nullptr) {
+        return nullptr;
+    }
+
+    std::string class_name_str = normalize_cool_type(getSymbolTable(), new_class->type_name->get_string());
+    if (class_name_str.empty()) {
+        return nullptr;
+    }
+
     llvm::IRBuilder<> &builder = getIRBuilder();
+    if (builder.GetInsertBlock() == nullptr) {
+        return nullptr;
+    }
 
     // 1. 查找类信息
     ClassLayout* cls = getSymbolTable().findClass(class_name_str);
@@ -1232,44 +1320,58 @@ llvm::Value *CodeGenerator::emit_new__class(new__class *new_class)
         #endif
         return nullptr;
     }
-    
-    // 2. 如果 newFunc 还不存在，创建前向声明
-    if (!cls->newFunc) {
-        std::string new_name = class_name_str + ".new";
-        
-        // 获取类的 LLVM 类型
-        llvm::StructType *class_type = llvm::StructType::getTypeByName(
-            _context.getLLVMContext(), "class." + class_name_str
+
+    llvm::StructType* class_type = cls->type;
+    if (class_type == nullptr) {
+        class_type = llvm::StructType::getTypeByName(
+            _context.getLLVMContext(),
+            "class." + class_name_str
         );
-        if (!class_type) {
-            // 如果类型还不存在，创建不透明结构体作为前向声明
-            class_type = llvm::StructType::create(
-                _context.getLLVMContext(), 
-                "class." + class_name_str
-            );
-        }
-        
-        // 创建函数类型：返回类指针，无参数
-        llvm::FunctionType *func_type = llvm::FunctionType::get(
-            class_type->getPointerTo(), 
-            false
-        );
-        
-        // 创建函数声明（没有函数体）
-        cls->newFunc = llvm::Function::Create(
-            func_type,
-            llvm::Function::ExternalLinkage,
-            new_name,
-            &getModule()
-        );
-        
-        #ifdef DEBUG
-        std::cout << "Created forward declaration for: " << new_name << std::endl;
-        #endif
     }
-    
+    if (class_type == nullptr) {
+        #ifdef DEBUG
+        std::cerr << "Error: LLVM type for class " << class_name_str << " not found" << std::endl;
+        #endif
+        return nullptr;
+    }
+
+    std::string new_name = class_name_str + ".new";
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        class_type->getPointerTo(),
+        false
+    );
+
+    if (cls->newFunc == nullptr) {
+        llvm::Function* existing = getModule().getFunction(new_name);
+        if (existing != nullptr) {
+            cls->newFunc = existing;
+        } else {
+            cls->newFunc = llvm::Function::Create(
+                func_type,
+                llvm::Function::ExternalLinkage,
+                new_name,
+                &getModule()
+            );
+            #ifdef DEBUG
+            std::cout << "Created forward declaration for: " << new_name << std::endl;
+            #endif
+        }
+    }
+
+    if (cls->newFunc == nullptr) {
+        return nullptr;
+    }
+
     // 3. 调用 new 函数
-    llvm::Value* result = builder.CreateCall(cls->newFunc, {});
+    llvm::Value* result = builder.CreateCall(cls->newFunc, {}, class_name_str + ".newtmp");
+    if (result == nullptr) {
+        return nullptr;
+    }
+
+    llvm::Type* expectedType = class_type->getPointerTo();
+    if (result->getType() != expectedType) {
+        result = builder.CreateBitCast(result, expectedType, class_name_str + ".newcast");
+    }
 
     #ifdef DEBUG
     std::cout << "Called " << class_name_str << ".new, return type: ";
@@ -2920,6 +3022,17 @@ llvm::Value *CodeGenerator::emit_dispatch_class(dispatch_class* expression)
 
     // 基本类型直接调用运行时内建函数，不能走对象虚表。
     if (is_primitive_cool_type(class_name)) {
+        if (method_name == "type_name") {
+            return get_or_create_string_constant(*this, class_name);
+        }
+        if (method_name == "copy") {
+            return obj_ptr;
+        }
+        if (method_name == "abort") {
+            emit_runtime_abort(*this);
+            return nullptr;
+        }
+
         llvm::Function* builtinFunc = find_builtin_method_in_hierarchy(*this, getSymbolTable(), class_name, method_name);
         if (builtinFunc == nullptr) {
             return nullptr;
@@ -3058,27 +3171,9 @@ llvm::Value *CodeGenerator::emit_cond_class(cond_class* expression)
     if (pred_value == nullptr) {
         return nullptr;
     }
-
-    if (!pred_value->getType()->isIntegerTy(1)) {
-        if (pred_value->getType()->isIntegerTy()) {
-            pred_value = getIRBuilder().CreateICmpNE(
-                pred_value,
-                llvm::ConstantInt::get(pred_value->getType(), 0),
-                "bool_cmp"
-            );
-        } else if (pred_value->getType()->isPointerTy()) {
-            pred_value = getIRBuilder().CreateICmpNE(
-                pred_value,
-                llvm::ConstantPointerNull::get(static_cast<llvm::PointerType*>(pred_value->getType())),
-                "ptr_cmp"
-            );
-        } else {
-            pred_value = getIRBuilder().CreateICmpNE(
-                getIRBuilder().CreatePtrToInt(pred_value, llvm::Type::getInt64Ty(_context.getLLVMContext())),
-                llvm::ConstantInt::get(llvm::Type::getInt64Ty(_context.getLLVMContext()), 0),
-                "generic_cmp"
-            );
-        }
+    pred_value = coerce_condition_to_i1(*this, pred_value, "cond.pred");
+    if (pred_value == nullptr) {
+        return nullptr;
     }
 
     llvm::BasicBlock* then_block = llvm::BasicBlock::Create(_context.getLLVMContext(), "then", current_function);
@@ -3118,22 +3213,30 @@ llvm::Value *CodeGenerator::emit_cond_class(cond_class* expression)
 
     std::string resultCoolType = infer_expression_type(expression, *this);
     llvm::Type* mergeType = nullptr;
+    llvm::Value* liveThenValue = then_terminated ? nullptr : then_value;
+    llvm::Value* liveElseValue = else_terminated ? nullptr : else_value;
     if (!resultCoolType.empty()) {
         mergeType = map_cool_type(*this, resultCoolType);
     }
     if (mergeType == nullptr) {
-        if (then_value->getType() == else_value->getType()) {
-            mergeType = then_value->getType();
-        } else if (then_value->getType()->isPointerTy() && else_value->getType()->isPointerTy()) {
+        if (liveThenValue != nullptr && liveElseValue != nullptr &&
+            liveThenValue->getType() == liveElseValue->getType()) {
+            mergeType = liveThenValue->getType();
+        } else if (liveThenValue != nullptr && liveElseValue != nullptr &&
+                   liveThenValue->getType()->isPointerTy() && liveElseValue->getType()->isPointerTy()) {
             mergeType = llvm::Type::getInt8PtrTy(_context.getLLVMContext())->getPointerTo();
+        } else if (liveThenValue != nullptr) {
+            mergeType = liveThenValue->getType();
+        } else if (liveElseValue != nullptr) {
+            mergeType = liveElseValue->getType();
         } else {
-            mergeType = then_value->getType();
+            return nullptr;
         }
     }
 
     unsigned incomingCount = static_cast<unsigned>((then_terminated ? 0 : 1) + (else_terminated ? 0 : 1));
     if (incomingCount == 1) {
-        llvm::Value* liveValue = then_terminated ? else_value : then_value;
+        llvm::Value* liveValue = then_terminated ? liveElseValue : liveThenValue;
         if (liveValue == nullptr) {
             return nullptr;
         }
@@ -3182,10 +3285,14 @@ llvm::Value *CodeGenerator::emit_loop_class(loop_class* expression)
     BasicBlock *AfterBB = BasicBlock::Create(_context.getLLVMContext(), "loop.after", TheFunction);
 
     // entry -> cond
-    getIRBuilder().CreateBr(CondBB);
+    if (getIRBuilder().GetInsertBlock()->getTerminator() == nullptr) {
+        getIRBuilder().CreateBr(CondBB);
+    }
     getIRBuilder().SetInsertPoint(CondBB);
 
     llvm::Value* predVal = emit_expression(expression->pred);
+    if (!predVal) return nullptr;
+    predVal = coerce_condition_to_i1(*this, predVal, "loop.pred");
     if (!predVal) return nullptr;
 
     getIRBuilder().CreateCondBr(predVal, BodyBB, AfterBB);
@@ -3193,7 +3300,9 @@ llvm::Value *CodeGenerator::emit_loop_class(loop_class* expression)
     // body -> cond
     getIRBuilder().SetInsertPoint(BodyBB);
     emit_expression(expression->body);
-    getIRBuilder().CreateBr(CondBB); // 重新回到条件
+    if (getIRBuilder().GetInsertBlock()->getTerminator() == nullptr) {
+        getIRBuilder().CreateBr(CondBB); // 重新回到条件
+    }
 
     // loop exit
     getIRBuilder().SetInsertPoint(AfterBB);
@@ -3438,6 +3547,9 @@ llvm::Value* CodeGenerator::emit_plus_class(plus_class* expression) {
     if (expression == nullptr) return nullptr;
     llvm::Value* left_val = emit_expression(expression->e1);
     llvm::Value* right_val = emit_expression(expression->e2);
+    if (left_val == nullptr || right_val == nullptr) {
+        return nullptr;
+    }
     return getIRBuilder().CreateAdd(left_val, right_val, "addtmp");
 }
 
@@ -3448,6 +3560,9 @@ llvm::Value* CodeGenerator::emit_sub_class(sub_class* expression) {
     if (expression == nullptr) return nullptr;
     llvm::Value* left_val = emit_expression(expression->e1);
     llvm::Value* right_val = emit_expression(expression->e2);
+    if (left_val == nullptr || right_val == nullptr) {
+        return nullptr;
+    }
     
     return getIRBuilder().CreateSub(left_val, right_val, "subtmp");
 }
@@ -3460,6 +3575,9 @@ llvm::Value* CodeGenerator::emit_mul_class(mul_class* expression) {
 
     llvm::Value* left_val = emit_expression(expression->e1);
     llvm::Value* right_val = emit_expression(expression->e2);
+    if (left_val == nullptr || right_val == nullptr) {
+        return nullptr;
+    }
     
     return getIRBuilder().CreateMul(left_val, right_val, "multmp");
 }
@@ -3472,6 +3590,9 @@ llvm::Value* CodeGenerator::emit_divide_class(divide_class* expression) {
 
     llvm::Value* left_val = emit_expression(expression->e1);
     llvm::Value* right_val = emit_expression(expression->e2);
+    if (left_val == nullptr || right_val == nullptr) {
+        return nullptr;
+    }
     
     return getIRBuilder().CreateSDiv(left_val, right_val, "divtmp");
 }
@@ -3483,6 +3604,9 @@ llvm::Value* CodeGenerator::emit_neg_class(neg_class* expression) {
     if (expression == nullptr) return nullptr;
 
     llvm::Value* val = emit_expression(expression->e1);
+    if (val == nullptr) {
+        return nullptr;
+    }
     
     llvm::Value* zero = llvm::ConstantInt::get(getIRBuilder().getInt32Ty(), 0);
     return getIRBuilder().CreateSub(zero, val, "negtmp");
@@ -3496,6 +3620,9 @@ llvm::Value* CodeGenerator::emit_lt_class(lt_class* expression) {
 
     llvm::Value* left_val = emit_expression(expression->e1);
     llvm::Value* right_val = emit_expression(expression->e2);
+    if (left_val == nullptr || right_val == nullptr) {
+        return nullptr;
+    }
     
     return getIRBuilder().CreateICmpSLT(left_val, right_val, "cmptmp");
 }
@@ -3508,6 +3635,9 @@ llvm::Value* CodeGenerator::emit_eq_class(eq_class* expression) {
 
     llvm::Value* left_val = emit_expression(expression->e1);
     llvm::Value* right_val = emit_expression(expression->e2);
+    if (left_val == nullptr || right_val == nullptr) {
+        return nullptr;
+    }
     std::string leftType = infer_expression_type(expression->e1, *this);
     std::string rightType = infer_expression_type(expression->e2, *this);
 
@@ -3547,6 +3677,9 @@ llvm::Value* CodeGenerator::emit_leq_class(leq_class* expression) {
 
     llvm::Value* left_val = emit_expression(expression->e1);
     llvm::Value* right_val = emit_expression(expression->e2);
+    if (left_val == nullptr || right_val == nullptr) {
+        return nullptr;
+    }
     
     return getIRBuilder().CreateICmpSLE(left_val, right_val, "leqtmp");
 }
@@ -3558,6 +3691,9 @@ llvm::Value* CodeGenerator::emit_comp_class(comp_class* expression) {
     if (expression == nullptr) return nullptr;
 
     llvm::Value* val = emit_expression(expression->e1);
+    if (val == nullptr) {
+        return nullptr;
+    }
     return getIRBuilder().CreateNot(val, "comptmp");
 }
 
@@ -3590,51 +3726,7 @@ llvm::Value* CodeGenerator::emit_string_const_class(string_const_class* expressi
     
     if (expression == nullptr) return nullptr;
     
-    std::string str = expression->token->get_string();
-    
-    // 检查字符串池中是否已存在
-    llvm::Value* exist_str = getSymbolTable().getStringValue(str);
-    if (exist_str != nullptr) {
-        return exist_str;
-    }
-    // 创建字符串常量
-    llvm::Constant* str_const = llvm::ConstantDataArray::getString(
-        _context.getLLVMContext(),
-        str,
-        true
-    );
-    
-    // 生成基于哈希的全局变量名
-    std::hash<std::string> hasher;
-    std::string global_name = ".str." + std::to_string(hasher(str));
-    
-    // 创建全局变量
-    llvm::GlobalVariable* global_str = new llvm::GlobalVariable(
-        getModule(),
-        str_const->getType(),
-        true,
-        llvm::GlobalVariable::PrivateLinkage,
-        str_const,
-        global_name
-    );
-    
-    // 获取 i8* 指针
-    llvm::Type* i8_type = llvm::Type::getInt8Ty(_context.getLLVMContext());
-    llvm::Type* i32_type = llvm::Type::getInt32Ty(_context.getLLVMContext());
-    llvm::Value* zero = llvm::ConstantInt::get(i32_type, 0);
-    llvm::Value* indices[] = { zero, zero };
-    
-    llvm::Value* str_ptr = getIRBuilder().CreateInBoundsGEP(
-        global_str->getValueType(),
-        global_str,
-        indices,
-        "str_ptr"
-    );
-    
-    // 缓存到池中
-    getSymbolTable().registerString(str, str_ptr);
-    
-    return str_ptr;
+    return get_or_create_string_constant(*this, expression->token->get_string());
 }
 
 llvm::Value* CodeGenerator::emit_isvoid_class(isvoid_class* expression) {
@@ -3644,6 +3736,9 @@ llvm::Value* CodeGenerator::emit_isvoid_class(isvoid_class* expression) {
     if (expression == nullptr) return nullptr;
 
     llvm::Value* val = emit_expression(expression->e1);
+    if (val == nullptr) {
+        return nullptr;
+    }
     
     llvm::Value* null_val = llvm::Constant::getNullValue(val->getType());
     return getIRBuilder().CreateICmpEQ(val, null_val, "isvoidtmp");
@@ -3771,9 +3866,6 @@ llvm::Value* CodeGenerator::emit_expression(Expression e) {
     }
     else if (auto* expr = dynamic_cast<assign_class*>(e)) {
         return emit_assign_class(expr);
-    }
-    else if (auto* expr = dynamic_cast<typcase_class*>(e)) {
-        return emit_typcase_class(expr);
     }
     else if (auto* expr = dynamic_cast<typcase_class*>(e)) {
         return emit_typcase_class(expr);

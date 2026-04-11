@@ -81,9 +81,15 @@ int main(int argc, char** argv) {
         options.inputExtension = ".cl";
         options.actualArtifactExtension = ".actual.ll";
         options.expectedOutputExtension = ".expected.txt";
-        options.prepareOutputMode = CommandOutputMode::Stdout;
+        options.skipEmptyExpectedFiles = true;
+        options.prepareOutputMode = CommandOutputMode::File;
+#ifdef _WIN32
         options.prepareCommandTemplate =
-            "cd {app_dir} && ../bin/.i686/lexer {input} | ./parser {input} | ./semant {input} | ./cgen-llvm {input}";
+            "cd {app_dir} && ../bin/.i686/lexer {input} | ./parser {input} | ./semant {input} | ./cgen-llvm {input} > {actual_artifact}";
+#else
+        options.prepareCommandTemplate =
+            "bash -o pipefail -lc \"cd {app_dir} && ../bin/.i686/lexer {input} | ./parser {input} | ./semant {input} | ./cgen-llvm {input} > {actual_artifact}\"";
+#endif
         options.linkCommandTemplate =
             "clang++ {actual_artifact} -L{runtime_dir} -lruntime -Wl,-rpath,{runtime_dir} -o {executable}";
         options.runCommandTemplate = "{executable}";

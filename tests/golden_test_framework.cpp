@@ -89,6 +89,71 @@ std::string escapedStringOrEmpty(const std::string& value) {
     return localShellEscape(value);
 }
 
+bool fileHasMeaningfulContent(const fs::path& path) {
+    if (!fs::exists(path)) {
+        return false;
+    }
+
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) {
+        return false;
+    }
+
+    char ch = '\0';
+    while (stream.get(ch)) {
+        if (!std::isspace(static_cast<unsigned char>(ch))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::optional<fs::path> resolveCaseRelativePath(const GoldenTestCase& testCase, const std::string& rawPath) {
+    if (rawPath.empty()) {
+        return std::nullopt;
+    }
+
+    fs::path candidate(rawPath);
+    if (candidate.is_absolute()) {
+        return candidate;
+    }
+
+    fs::path fromCaseDir = testCase.inputPath.parent_path() / candidate;
+    if (fs::exists(fromCaseDir)) {
+        return fromCaseDir;
+    }
+
+    return candidate;
+}
+
+std::string readLocalTextFile(const fs::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) {
+        return "";
+    }
+
+    std::ostringstream buffer;
+    buffer << stream.rdbuf();
+    return buffer.str();
+}
+
+std::optional<std::string> resolveProgramInput(const GoldenTestCase& testCase) {
+    auto fileIt = testCase.variables.find("program_input_file");
+    if (fileIt != testCase.variables.end()) {
+        if (std::optional<fs::path> resolved = resolveCaseRelativePath(testCase, fileIt->second);
+            resolved.has_value() && fs::exists(*resolved)) {
+            return readLocalTextFile(*resolved);
+        }
+    }
+
+    auto textIt = testCase.variables.find("program_input");
+    if (textIt != testCase.variables.end()) {
+        return textIt->second;
+    }
+
+    return std::nullopt;
+}
+
 }  // namespace
 
 GoldenTestFramework::GoldenTestFramework(GoldenRunnerOptions options)
@@ -140,6 +205,16 @@ std::vector<GoldenTestCase> GoldenTestFramework::discoverCases() const {
             testCase.expectedOutputPath += options_.expectedOutputExtension;
         }
         testCase.executablePath = options_.artifactsDir / (baseName + executableSuffix());
+
+        if (options_.skipEmptyExpectedFiles) {
+            const bool hasArtifactExpectation = !testCase.expectedArtifactPath.empty() &&
+                fileHasMeaningfulContent(testCase.expectedArtifactPath);
+            const bool hasOutputExpectation = !testCase.expectedOutputPath.empty() &&
+                fileHasMeaningfulContent(testCase.expectedOutputPath);
+            if (!hasArtifactExpectation && !hasOutputExpectation) {
+                continue;
+            }
+        }
 
         if (!options_.filter.empty() &&
             testCase.name.find(options_.filter) == std::string::npos &&
@@ -239,14 +314,13 @@ GoldenTestResult GoldenTestFramework::runCase(const GoldenTestCase& testCase) co
 
     if (!options_.runCommandTemplate.empty()) {
         result.runCommand = buildCommand(options_.runCommandTemplate, testCase);
-        CommandResult runResult = runCommand(result.runCommand, options_.programInput);
+        std::optional<std::string> programInput = resolveProgramInput(testCase);
+        if (!programInput.has_value()) {
+            programInput = options_.programInput;
+        }
+        CommandResult runResult = runCommand(result.runCommand, programInput);
         result.runExitCode = runResult.exitCode;
         result.actualOutput = normalizeText(runResult.output);
-
-        if (runResult.exitCode != 0) {
-            result.message = "program exited with code " + std::to_string(runResult.exitCode);
-            return result;
-        }
 
         if (compareOutput) {
             result.outputCompared = true;
@@ -259,6 +333,11 @@ GoldenTestResult GoldenTestFramework::runCase(const GoldenTestCase& testCase) co
                 }
                 return result;
             }
+        }
+
+        if (runResult.exitCode != 0) {
+            result.message = "program exited with code " + std::to_string(runResult.exitCode);
+            return result;
         }
     }
 

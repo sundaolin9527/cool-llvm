@@ -62,6 +62,7 @@ struct GoldenRunnerOptions {
     std::string programInput = "q\n";
     std::string filter;
     CommandOutputMode prepareOutputMode = CommandOutputMode::Stdout;
+    bool skipEmptyExpectedFiles = false;
     bool listOnly = false;
     bool verbose = false;
 };

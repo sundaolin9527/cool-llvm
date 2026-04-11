@@ -9,7 +9,7 @@ CompilerContext& CompilerContext::getInstance() {
 
 // 私有构造函数实现
 CompilerContext::CompilerContext() : 
-    llvmContext_(std::make_unique<llvm::LLVMContext>()){}
+    llvmContext_(std::make_unique<llvm::LLVMContext>()) {}
 
 // ====== LLVM 上下文访问器 ======
 llvm::LLVMContext& CompilerContext::getLLVMContext() {
@@ -60,4 +60,12 @@ bool CompilerContext::inLoop() const {
 
 int CompilerContext::getLoopDepth() const {
     return static_cast<int>(loopStack.size());
+}
+
+void CompilerContext::setNewClassName(const std::string& newClassName) {
+    newClassName_ = newClassName;
+}
+
+std::string CompilerContext::getNewClassName() const {
+    return newClassName_;
 }

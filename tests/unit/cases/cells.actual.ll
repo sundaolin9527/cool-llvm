@@ -617,15 +617,15 @@ define ptr @Main.main(ptr %this) {
 entry:
   %this.addr = alloca ptr, align 8
   store ptr %this, ptr %this.addr, align 8
-  %0 = call ptr @CellularAutomaton.new()
-  %dispatch.isnull = icmp eq ptr %0, null
+  %CellularAutomaton.newtmp = call ptr @CellularAutomaton.new()
+  %dispatch.isnull = icmp eq ptr %CellularAutomaton.newtmp, null
   br i1 %dispatch.isnull, label %dispatch.abort, label %dispatch.ok
 
 dispatch.ok:                                      ; preds = %entry
-  %vtable.ptr = load ptr, ptr %0, align 8
+  %vtable.ptr = load ptr, ptr %CellularAutomaton.newtmp, align 8
   %method.ptr.addr = getelementptr ptr, ptr %vtable.ptr, i64 9
   %method.ptr = load ptr, ptr %method.ptr.addr, align 8
-  %dispatch.result = call ptr %method.ptr(ptr %0, ptr @.str.9445756667145501826)
+  %dispatch.result = call ptr %method.ptr(ptr %CellularAutomaton.newtmp, ptr @.str.9445756667145501826)
   %self = load ptr, ptr %this.addr, align 8
   %cells.addr = getelementptr i8, ptr %self, i32 8
   store ptr %dispatch.result, ptr %cells.addr, align 8

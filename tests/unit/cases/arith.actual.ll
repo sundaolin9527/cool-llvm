@@ -9,7 +9,7 @@ source_filename = "main_module"
 %class.String = type { %class.Object.0, ptr, i32, [4 x i8], i32, [4 x i8] }
 %class.IO.1 = type { %class.Object.0 }
 %class.A = type { %class.Object.0, i32, [4 x i8] }
-%class.B = type { %class.A, i32, [4 x i8] }
+%class.B = type { %class.A }
 %class.C = type { %class.B }
 %class.D = type { %class.B }
 %class.E = type { %class.D }
@@ -116,6 +116,9 @@ source_filename = "main_module"
 @.str.14494284460613645429 = private constant [2 x i8] c"d\00"
 @.str.2540012008095083820 = private constant [2 x i8] c"e\00"
 @.str.8968846175329310707 = private constant [2 x i8] c"f\00"
+@.str.11967580440506868130 = private constant [2 x i8] c"g\00"
+@.str.14397651933741679677 = private constant [20 x i8] c"is divisible by 3.\0A\00"
+@.str.311485499312808629 = private constant [24 x i8] c"is not divisible by 3.\0A\00"
 @.str.11539147918811572172 = private constant [2 x i8] c"h\00"
 @.str.15037267644295846719 = private constant [13 x i8] c"is equal to \00"
 @.str.15336703179750707214 = private constant [29 x i8] c"times 8 with a remainder of \00"
@@ -2146,7 +2149,7 @@ entry:
   store ptr %A.newtmp, ptr %avar.addr, align 8
   br label %loop.cond
 
-loop.cond:                                        ; preds = %ifcont480, %entry
+loop.cond:                                        ; preds = %ifcont564, %entry
   %self1 = load ptr, ptr %this.addr, align 8
   %flag.addr = getelementptr i8, ptr %self1, i32 32
   %flag = load i1, ptr %flag.addr, align 1
@@ -2359,7 +2362,7 @@ dispatch.ok105:                                   ; preds = %dispatch.ok96
   %self113 = load ptr, ptr %this.addr, align 8
   %avar.addr114 = getelementptr i8, ptr %self113, i32 16
   store ptr %dispatch.result112, ptr %avar.addr114, align 8
-  br label %ifcont480
+  br label %ifcont564
 
 dispatch.abort106:                                ; preds = %dispatch.ok96
   call void @abort()
@@ -2531,7 +2534,7 @@ dispatch.abort192:                                ; preds = %dispatch.ok183
 
 case.end:                                         ; preds = %dispatch.ok153, %dispatch.ok131
   %case.result = phi ptr [ %dispatch.result138, %dispatch.ok131 ], [ %dispatch.result160, %dispatch.ok153 ]
-  br label %ifcont478
+  br label %ifcont562
 
 else197:                                          ; preds = %else115
   %self198 = load ptr, ptr %this.addr, align 8
@@ -2612,7 +2615,7 @@ dispatch.ok240:                                   ; preds = %dispatch.ok230
   %self248 = load ptr, ptr %this.addr, align 8
   %avar.addr249 = getelementptr i8, ptr %self248, i32 16
   store ptr %dispatch.result247, ptr %avar.addr249, align 8
-  br label %ifcont476
+  br label %ifcont560
 
 dispatch.abort241:                                ; preds = %dispatch.ok230
   call void @abort()
@@ -2650,7 +2653,7 @@ dispatch.ok259:                                   ; preds = %static.dispatch.ok
   %self266 = load ptr, ptr %this.addr, align 8
   %avar.addr267 = getelementptr i8, ptr %self266, i32 16
   store ptr %1, ptr %avar.addr267, align 8
-  br label %ifcont474
+  br label %ifcont558
 
 dispatch.abort260:                                ; preds = %static.dispatch.ok
   call void @abort()
@@ -2688,7 +2691,7 @@ dispatch.ok281:                                   ; preds = %static.dispatch.ok2
   %self288 = load ptr, ptr %this.addr, align 8
   %avar.addr289 = getelementptr i8, ptr %self288, i32 16
   store ptr %2, ptr %avar.addr289, align 8
-  br label %ifcont472
+  br label %ifcont556
 
 dispatch.abort282:                                ; preds = %static.dispatch.ok275
   call void @abort()
@@ -2726,7 +2729,7 @@ dispatch.ok303:                                   ; preds = %static.dispatch.ok2
   %self310 = load ptr, ptr %this.addr, align 8
   %avar.addr311 = getelementptr i8, ptr %self310, i32 16
   store ptr %3, ptr %avar.addr311, align 8
-  br label %ifcont470
+  br label %ifcont554
 
 dispatch.abort304:                                ; preds = %static.dispatch.ok297
   call void @abort()
@@ -2736,286 +2739,422 @@ else312:                                          ; preds = %else290
   %self313 = load ptr, ptr %this.addr, align 8
   %char.addr314 = getelementptr i8, ptr %self313, i32 8
   %char315 = load ptr, ptr %char.addr314, align 8
-  %eqtmp316 = call i1 @String_equals(ptr %char315, ptr @.str.11539147918811572172)
-  br i1 %eqtmp316, label %then317, label %else426
+  %eqtmp316 = call i1 @String_equals(ptr %char315, ptr @.str.11967580440506868130)
+  br i1 %eqtmp316, label %then317, label %else394
 
 then317:                                          ; preds = %else312
-  %x = alloca ptr, align 8
-  store ptr null, ptr %x, align 8
-  %E.newtmp = call ptr @E.new()
-  %dispatch.isnull320 = icmp eq ptr %E.newtmp, null
-  br i1 %dispatch.isnull320, label %dispatch.abort319, label %dispatch.ok318
+  %D.newtmp318 = call ptr @D.new()
+  %dispatch.isnull321 = icmp eq ptr %D.newtmp318, null
+  br i1 %dispatch.isnull321, label %dispatch.abort320, label %dispatch.ok319
 
-dispatch.ok318:                                   ; preds = %then317
-  %vtable.ptr321 = load ptr, ptr %E.newtmp, align 8
-  %method.ptr.addr322 = getelementptr ptr, ptr %vtable.ptr321, i64 13
-  %method.ptr323 = load ptr, ptr %method.ptr.addr322, align 8
-  %self324 = load ptr, ptr %this.addr, align 8
-  %avar.addr325 = getelementptr i8, ptr %self324, i32 16
-  %avar326 = load ptr, ptr %avar.addr325, align 8
-  %dispatch.isnull329 = icmp eq ptr %avar326, null
-  br i1 %dispatch.isnull329, label %dispatch.abort328, label %dispatch.ok327
+dispatch.ok319:                                   ; preds = %then317
+  %vtable.ptr322 = load ptr, ptr %D.newtmp318, align 8
+  %method.ptr.addr323 = getelementptr ptr, ptr %vtable.ptr322, i64 12
+  %method.ptr324 = load ptr, ptr %method.ptr.addr323, align 8
+  %self325 = load ptr, ptr %this.addr, align 8
+  %avar.addr326 = getelementptr i8, ptr %self325, i32 16
+  %avar327 = load ptr, ptr %avar.addr326, align 8
+  %dispatch.isnull330 = icmp eq ptr %avar327, null
+  br i1 %dispatch.isnull330, label %dispatch.abort329, label %dispatch.ok328
 
-dispatch.abort319:                                ; preds = %then317
+dispatch.abort320:                                ; preds = %then317
   call void @abort()
   unreachable
 
-dispatch.ok327:                                   ; preds = %dispatch.ok318
-  %vtable.ptr330 = load ptr, ptr %avar326, align 8
-  %method.ptr.addr331 = getelementptr ptr, ptr %vtable.ptr330, i64 5
-  %method.ptr332 = load ptr, ptr %method.ptr.addr331, align 8
-  %dispatch.result333 = call i32 %method.ptr332(ptr %avar326)
-  %dispatch.result334 = call ptr %method.ptr323(ptr %E.newtmp, i32 %dispatch.result333)
-  store ptr %dispatch.result334, ptr %x, align 8
-  %r = alloca i32, align 4
-  %self335 = load ptr, ptr %this.addr, align 8
-  %avar.addr336 = getelementptr i8, ptr %self335, i32 16
-  %avar337 = load ptr, ptr %avar.addr336, align 8
-  %dispatch.isnull340 = icmp eq ptr %avar337, null
+dispatch.ok328:                                   ; preds = %dispatch.ok319
+  %vtable.ptr331 = load ptr, ptr %avar327, align 8
+  %method.ptr.addr332 = getelementptr ptr, ptr %vtable.ptr331, i64 5
+  %method.ptr333 = load ptr, ptr %method.ptr.addr332, align 8
+  %dispatch.result334 = call i32 %method.ptr333(ptr %avar327)
+  %dispatch.result335 = call i1 %method.ptr324(ptr %D.newtmp318, i32 %dispatch.result334)
+  br i1 %dispatch.result335, label %then336, label %else364
+
+dispatch.abort329:                                ; preds = %dispatch.ok319
+  call void @abort()
+  unreachable
+
+then336:                                          ; preds = %dispatch.ok328
+  %self337 = load ptr, ptr %this.addr, align 8
+  %dispatch.isnull340 = icmp eq ptr %self337, null
   br i1 %dispatch.isnull340, label %dispatch.abort339, label %dispatch.ok338
 
-dispatch.abort328:                                ; preds = %dispatch.ok318
-  call void @abort()
-  unreachable
-
-dispatch.ok338:                                   ; preds = %dispatch.ok327
-  %vtable.ptr341 = load ptr, ptr %avar337, align 8
+dispatch.ok338:                                   ; preds = %then336
+  %vtable.ptr341 = load ptr, ptr %self337, align 8
   %method.ptr.addr342 = getelementptr ptr, ptr %vtable.ptr341, i64 5
   %method.ptr343 = load ptr, ptr %method.ptr.addr342, align 8
-  %dispatch.result344 = call i32 %method.ptr343(ptr %avar337)
-  %x345 = load ptr, ptr %x, align 8
-  %dispatch.isnull348 = icmp eq ptr %x345, null
+  %dispatch.result344 = call ptr %method.ptr343(ptr %self337, ptr @.str.1187902871956776895)
+  %self345 = load ptr, ptr %this.addr, align 8
+  %dispatch.isnull348 = icmp eq ptr %self345, null
   br i1 %dispatch.isnull348, label %dispatch.abort347, label %dispatch.ok346
 
-dispatch.abort339:                                ; preds = %dispatch.ok327
+dispatch.abort339:                                ; preds = %then336
   call void @abort()
   unreachable
 
 dispatch.ok346:                                   ; preds = %dispatch.ok338
-  %vtable.ptr349 = load ptr, ptr %x345, align 8
-  %method.ptr.addr350 = getelementptr ptr, ptr %vtable.ptr349, i64 5
+  %vtable.ptr349 = load ptr, ptr %self345, align 8
+  %method.ptr.addr350 = getelementptr ptr, ptr %vtable.ptr349, i64 14
   %method.ptr351 = load ptr, ptr %method.ptr.addr350, align 8
-  %dispatch.result352 = call i32 %method.ptr351(ptr %x345)
-  %multmp = mul i32 %dispatch.result352, 8
-  %subtmp = sub i32 %dispatch.result344, %multmp
-  store i32 %subtmp, ptr %r, align 4
-  %self353 = load ptr, ptr %this.addr, align 8
-  %dispatch.isnull356 = icmp eq ptr %self353, null
-  br i1 %dispatch.isnull356, label %dispatch.abort355, label %dispatch.ok354
+  %self352 = load ptr, ptr %this.addr, align 8
+  %avar.addr353 = getelementptr i8, ptr %self352, i32 16
+  %avar354 = load ptr, ptr %avar.addr353, align 8
+  %dispatch.result355 = call ptr %method.ptr351(ptr %self345, ptr %avar354)
+  %self356 = load ptr, ptr %this.addr, align 8
+  %dispatch.isnull359 = icmp eq ptr %self356, null
+  br i1 %dispatch.isnull359, label %dispatch.abort358, label %dispatch.ok357
 
 dispatch.abort347:                                ; preds = %dispatch.ok338
   call void @abort()
   unreachable
 
-dispatch.ok354:                                   ; preds = %dispatch.ok346
-  %vtable.ptr357 = load ptr, ptr %self353, align 8
-  %method.ptr.addr358 = getelementptr ptr, ptr %vtable.ptr357, i64 5
-  %method.ptr359 = load ptr, ptr %method.ptr.addr358, align 8
-  %dispatch.result360 = call ptr %method.ptr359(ptr %self353, ptr @.str.1187902871956776895)
-  %self361 = load ptr, ptr %this.addr, align 8
-  %dispatch.isnull364 = icmp eq ptr %self361, null
-  br i1 %dispatch.isnull364, label %dispatch.abort363, label %dispatch.ok362
+dispatch.ok357:                                   ; preds = %dispatch.ok346
+  %vtable.ptr360 = load ptr, ptr %self356, align 8
+  %method.ptr.addr361 = getelementptr ptr, ptr %vtable.ptr360, i64 5
+  %method.ptr362 = load ptr, ptr %method.ptr.addr361, align 8
+  %dispatch.result363 = call ptr %method.ptr362(ptr %self356, ptr @.str.14397651933741679677)
+  br label %ifcont392
 
-dispatch.abort355:                                ; preds = %dispatch.ok346
+dispatch.abort358:                                ; preds = %dispatch.ok346
   call void @abort()
   unreachable
 
-dispatch.ok362:                                   ; preds = %dispatch.ok354
-  %vtable.ptr365 = load ptr, ptr %self361, align 8
-  %method.ptr.addr366 = getelementptr ptr, ptr %vtable.ptr365, i64 14
-  %method.ptr367 = load ptr, ptr %method.ptr.addr366, align 8
-  %self368 = load ptr, ptr %this.addr, align 8
-  %avar.addr369 = getelementptr i8, ptr %self368, i32 16
-  %avar370 = load ptr, ptr %avar.addr369, align 8
-  %dispatch.result371 = call ptr %method.ptr367(ptr %self361, ptr %avar370)
-  %self372 = load ptr, ptr %this.addr, align 8
-  %dispatch.isnull375 = icmp eq ptr %self372, null
-  br i1 %dispatch.isnull375, label %dispatch.abort374, label %dispatch.ok373
+else364:                                          ; preds = %dispatch.ok328
+  %self365 = load ptr, ptr %this.addr, align 8
+  %dispatch.isnull368 = icmp eq ptr %self365, null
+  br i1 %dispatch.isnull368, label %dispatch.abort367, label %dispatch.ok366
 
-dispatch.abort363:                                ; preds = %dispatch.ok354
+dispatch.ok366:                                   ; preds = %else364
+  %vtable.ptr369 = load ptr, ptr %self365, align 8
+  %method.ptr.addr370 = getelementptr ptr, ptr %vtable.ptr369, i64 5
+  %method.ptr371 = load ptr, ptr %method.ptr.addr370, align 8
+  %dispatch.result372 = call ptr %method.ptr371(ptr %self365, ptr @.str.1187902871956776895)
+  %self373 = load ptr, ptr %this.addr, align 8
+  %dispatch.isnull376 = icmp eq ptr %self373, null
+  br i1 %dispatch.isnull376, label %dispatch.abort375, label %dispatch.ok374
+
+dispatch.abort367:                                ; preds = %else364
   call void @abort()
   unreachable
 
-dispatch.ok373:                                   ; preds = %dispatch.ok362
-  %vtable.ptr376 = load ptr, ptr %self372, align 8
-  %method.ptr.addr377 = getelementptr ptr, ptr %vtable.ptr376, i64 5
-  %method.ptr378 = load ptr, ptr %method.ptr.addr377, align 8
-  %dispatch.result379 = call ptr %method.ptr378(ptr %self372, ptr @.str.15037267644295846719)
+dispatch.ok374:                                   ; preds = %dispatch.ok366
+  %vtable.ptr377 = load ptr, ptr %self373, align 8
+  %method.ptr.addr378 = getelementptr ptr, ptr %vtable.ptr377, i64 14
+  %method.ptr379 = load ptr, ptr %method.ptr.addr378, align 8
   %self380 = load ptr, ptr %this.addr, align 8
-  %dispatch.isnull383 = icmp eq ptr %self380, null
-  br i1 %dispatch.isnull383, label %dispatch.abort382, label %dispatch.ok381
+  %avar.addr381 = getelementptr i8, ptr %self380, i32 16
+  %avar382 = load ptr, ptr %avar.addr381, align 8
+  %dispatch.result383 = call ptr %method.ptr379(ptr %self373, ptr %avar382)
+  %self384 = load ptr, ptr %this.addr, align 8
+  %dispatch.isnull387 = icmp eq ptr %self384, null
+  br i1 %dispatch.isnull387, label %dispatch.abort386, label %dispatch.ok385
 
-dispatch.abort374:                                ; preds = %dispatch.ok362
+dispatch.abort375:                                ; preds = %dispatch.ok366
   call void @abort()
   unreachable
 
-dispatch.ok381:                                   ; preds = %dispatch.ok373
-  %vtable.ptr384 = load ptr, ptr %self380, align 8
-  %method.ptr.addr385 = getelementptr ptr, ptr %vtable.ptr384, i64 14
-  %method.ptr386 = load ptr, ptr %method.ptr.addr385, align 8
-  %x387 = load ptr, ptr %x, align 8
-  %dispatch.result388 = call ptr %method.ptr386(ptr %self380, ptr %x387)
-  %self389 = load ptr, ptr %this.addr, align 8
-  %dispatch.isnull392 = icmp eq ptr %self389, null
-  br i1 %dispatch.isnull392, label %dispatch.abort391, label %dispatch.ok390
+dispatch.ok385:                                   ; preds = %dispatch.ok374
+  %vtable.ptr388 = load ptr, ptr %self384, align 8
+  %method.ptr.addr389 = getelementptr ptr, ptr %vtable.ptr388, i64 5
+  %method.ptr390 = load ptr, ptr %method.ptr.addr389, align 8
+  %dispatch.result391 = call ptr %method.ptr390(ptr %self384, ptr @.str.311485499312808629)
+  br label %ifcont392
 
-dispatch.abort382:                                ; preds = %dispatch.ok373
+dispatch.abort386:                                ; preds = %dispatch.ok374
   call void @abort()
   unreachable
 
-dispatch.ok390:                                   ; preds = %dispatch.ok381
-  %vtable.ptr393 = load ptr, ptr %self389, align 8
-  %method.ptr.addr394 = getelementptr ptr, ptr %vtable.ptr393, i64 5
-  %method.ptr395 = load ptr, ptr %method.ptr.addr394, align 8
-  %dispatch.result396 = call ptr %method.ptr395(ptr %self389, ptr @.str.15336703179750707214)
-  %a397 = alloca ptr, align 8
-  %A2I.newtmp = call ptr @A2I.new()
-  store ptr %A2I.newtmp, ptr %a397, align 8
-  %self398 = load ptr, ptr %this.addr, align 8
-  %dispatch.isnull401 = icmp eq ptr %self398, null
-  br i1 %dispatch.isnull401, label %dispatch.abort400, label %dispatch.ok399
+ifcont392:                                        ; preds = %dispatch.ok385, %dispatch.ok357
+  %cond_result393 = phi ptr [ %dispatch.result363, %dispatch.ok357 ], [ %dispatch.result391, %dispatch.ok385 ]
+  br label %ifcont552
 
-dispatch.abort391:                                ; preds = %dispatch.ok381
+else394:                                          ; preds = %else312
+  %self395 = load ptr, ptr %this.addr, align 8
+  %char.addr396 = getelementptr i8, ptr %self395, i32 8
+  %char397 = load ptr, ptr %char.addr396, align 8
+  %eqtmp398 = call i1 @String_equals(ptr %char397, ptr @.str.11539147918811572172)
+  br i1 %eqtmp398, label %then399, label %else508
+
+then399:                                          ; preds = %else394
+  %x = alloca ptr, align 8
+  store ptr null, ptr %x, align 8
+  %E.newtmp = call ptr @E.new()
+  %dispatch.isnull402 = icmp eq ptr %E.newtmp, null
+  br i1 %dispatch.isnull402, label %dispatch.abort401, label %dispatch.ok400
+
+dispatch.ok400:                                   ; preds = %then399
+  %vtable.ptr403 = load ptr, ptr %E.newtmp, align 8
+  %method.ptr.addr404 = getelementptr ptr, ptr %vtable.ptr403, i64 13
+  %method.ptr405 = load ptr, ptr %method.ptr.addr404, align 8
+  %self406 = load ptr, ptr %this.addr, align 8
+  %avar.addr407 = getelementptr i8, ptr %self406, i32 16
+  %avar408 = load ptr, ptr %avar.addr407, align 8
+  %dispatch.isnull411 = icmp eq ptr %avar408, null
+  br i1 %dispatch.isnull411, label %dispatch.abort410, label %dispatch.ok409
+
+dispatch.abort401:                                ; preds = %then399
   call void @abort()
   unreachable
 
-dispatch.ok399:                                   ; preds = %dispatch.ok390
-  %vtable.ptr402 = load ptr, ptr %self398, align 8
-  %method.ptr.addr403 = getelementptr ptr, ptr %vtable.ptr402, i64 5
-  %method.ptr404 = load ptr, ptr %method.ptr.addr403, align 8
-  %a405 = load ptr, ptr %a397, align 8
-  %dispatch.isnull408 = icmp eq ptr %a405, null
-  br i1 %dispatch.isnull408, label %dispatch.abort407, label %dispatch.ok406
+dispatch.ok409:                                   ; preds = %dispatch.ok400
+  %vtable.ptr412 = load ptr, ptr %avar408, align 8
+  %method.ptr.addr413 = getelementptr ptr, ptr %vtable.ptr412, i64 5
+  %method.ptr414 = load ptr, ptr %method.ptr.addr413, align 8
+  %dispatch.result415 = call i32 %method.ptr414(ptr %avar408)
+  %dispatch.result416 = call ptr %method.ptr405(ptr %E.newtmp, i32 %dispatch.result415)
+  store ptr %dispatch.result416, ptr %x, align 8
+  %r = alloca i32, align 4
+  %self417 = load ptr, ptr %this.addr, align 8
+  %avar.addr418 = getelementptr i8, ptr %self417, i32 16
+  %avar419 = load ptr, ptr %avar.addr418, align 8
+  %dispatch.isnull422 = icmp eq ptr %avar419, null
+  br i1 %dispatch.isnull422, label %dispatch.abort421, label %dispatch.ok420
 
-dispatch.abort400:                                ; preds = %dispatch.ok390
+dispatch.abort410:                                ; preds = %dispatch.ok400
   call void @abort()
   unreachable
 
-dispatch.ok406:                                   ; preds = %dispatch.ok399
-  %vtable.ptr409 = load ptr, ptr %a405, align 8
-  %method.ptr.addr410 = getelementptr ptr, ptr %vtable.ptr409, i64 9
-  %method.ptr411 = load ptr, ptr %method.ptr.addr410, align 8
-  %r412 = load i32, ptr %r, align 4
-  %dispatch.result413 = call ptr %method.ptr411(ptr %a405, i32 %r412)
-  %dispatch.result414 = call ptr %method.ptr404(ptr %self398, ptr %dispatch.result413)
-  %self415 = load ptr, ptr %this.addr, align 8
-  %dispatch.isnull418 = icmp eq ptr %self415, null
-  br i1 %dispatch.isnull418, label %dispatch.abort417, label %dispatch.ok416
+dispatch.ok420:                                   ; preds = %dispatch.ok409
+  %vtable.ptr423 = load ptr, ptr %avar419, align 8
+  %method.ptr.addr424 = getelementptr ptr, ptr %vtable.ptr423, i64 5
+  %method.ptr425 = load ptr, ptr %method.ptr.addr424, align 8
+  %dispatch.result426 = call i32 %method.ptr425(ptr %avar419)
+  %x427 = load ptr, ptr %x, align 8
+  %dispatch.isnull430 = icmp eq ptr %x427, null
+  br i1 %dispatch.isnull430, label %dispatch.abort429, label %dispatch.ok428
 
-dispatch.abort407:                                ; preds = %dispatch.ok399
+dispatch.abort421:                                ; preds = %dispatch.ok409
   call void @abort()
   unreachable
 
-dispatch.ok416:                                   ; preds = %dispatch.ok406
-  %vtable.ptr419 = load ptr, ptr %self415, align 8
-  %method.ptr.addr420 = getelementptr ptr, ptr %vtable.ptr419, i64 5
-  %method.ptr421 = load ptr, ptr %method.ptr.addr420, align 8
-  %dispatch.result422 = call ptr %method.ptr421(ptr %self415, ptr @.str.18400681194753865968)
-  %x423 = load ptr, ptr %x, align 8
-  %self424 = load ptr, ptr %this.addr, align 8
-  %avar.addr425 = getelementptr i8, ptr %self424, i32 16
-  store ptr %x423, ptr %avar.addr425, align 8
-  br label %ifcont468
+dispatch.ok428:                                   ; preds = %dispatch.ok420
+  %vtable.ptr431 = load ptr, ptr %x427, align 8
+  %method.ptr.addr432 = getelementptr ptr, ptr %vtable.ptr431, i64 5
+  %method.ptr433 = load ptr, ptr %method.ptr.addr432, align 8
+  %dispatch.result434 = call i32 %method.ptr433(ptr %x427)
+  %multmp = mul i32 %dispatch.result434, 8
+  %subtmp = sub i32 %dispatch.result426, %multmp
+  store i32 %subtmp, ptr %r, align 4
+  %self435 = load ptr, ptr %this.addr, align 8
+  %dispatch.isnull438 = icmp eq ptr %self435, null
+  br i1 %dispatch.isnull438, label %dispatch.abort437, label %dispatch.ok436
 
-dispatch.abort417:                                ; preds = %dispatch.ok406
+dispatch.abort429:                                ; preds = %dispatch.ok420
   call void @abort()
   unreachable
 
-else426:                                          ; preds = %else312
-  %self427 = load ptr, ptr %this.addr, align 8
-  %char.addr428 = getelementptr i8, ptr %self427, i32 8
-  %char429 = load ptr, ptr %char.addr428, align 8
-  %eqtmp430 = call i1 @String_equals(ptr %char429, ptr @.str.10485857595211860659)
-  br i1 %eqtmp430, label %then431, label %else435
+dispatch.ok436:                                   ; preds = %dispatch.ok428
+  %vtable.ptr439 = load ptr, ptr %self435, align 8
+  %method.ptr.addr440 = getelementptr ptr, ptr %vtable.ptr439, i64 5
+  %method.ptr441 = load ptr, ptr %method.ptr.addr440, align 8
+  %dispatch.result442 = call ptr %method.ptr441(ptr %self435, ptr @.str.1187902871956776895)
+  %self443 = load ptr, ptr %this.addr, align 8
+  %dispatch.isnull446 = icmp eq ptr %self443, null
+  br i1 %dispatch.isnull446, label %dispatch.abort445, label %dispatch.ok444
 
-then431:                                          ; preds = %else426
-  %A.newtmp432 = call ptr @A.new()
-  %self433 = load ptr, ptr %this.addr, align 8
-  %avar.addr434 = getelementptr i8, ptr %self433, i32 16
-  store ptr %A.newtmp432, ptr %avar.addr434, align 8
-  br label %ifcont466
-
-else435:                                          ; preds = %else426
-  %self436 = load ptr, ptr %this.addr, align 8
-  %char.addr437 = getelementptr i8, ptr %self436, i32 8
-  %char438 = load ptr, ptr %char.addr437, align 8
-  %eqtmp439 = call i1 @String_equals(ptr %char438, ptr @.str.747352984659061831)
-  br i1 %eqtmp439, label %then440, label %else443
-
-then440:                                          ; preds = %else435
-  %self441 = load ptr, ptr %this.addr, align 8
-  %flag.addr442 = getelementptr i8, ptr %self441, i32 32
-  store i1 false, ptr %flag.addr442, align 1
-  br label %ifcont464
-
-else443:                                          ; preds = %else435
-  %A.newtmp444 = call ptr @A.new()
-  %dispatch.isnull447 = icmp eq ptr %A.newtmp444, null
-  br i1 %dispatch.isnull447, label %dispatch.abort446, label %dispatch.ok445
-
-dispatch.ok445:                                   ; preds = %else443
-  %vtable.ptr448 = load ptr, ptr %A.newtmp444, align 8
-  %method.ptr.addr449 = getelementptr ptr, ptr %vtable.ptr448, i64 7
-  %method.ptr450 = load ptr, ptr %method.ptr.addr449, align 8
-  %self451 = load ptr, ptr %this.addr, align 8
-  %avar.addr452 = getelementptr i8, ptr %self451, i32 16
-  %avar453 = load ptr, ptr %avar.addr452, align 8
-  %dispatch.isnull456 = icmp eq ptr %avar453, null
-  br i1 %dispatch.isnull456, label %dispatch.abort455, label %dispatch.ok454
-
-dispatch.abort446:                                ; preds = %else443
+dispatch.abort437:                                ; preds = %dispatch.ok428
   call void @abort()
   unreachable
 
-dispatch.ok454:                                   ; preds = %dispatch.ok445
-  %vtable.ptr457 = load ptr, ptr %avar453, align 8
-  %method.ptr.addr458 = getelementptr ptr, ptr %vtable.ptr457, i64 5
-  %method.ptr459 = load ptr, ptr %method.ptr.addr458, align 8
-  %dispatch.result460 = call i32 %method.ptr459(ptr %avar453)
-  %dispatch.result461 = call ptr %method.ptr450(ptr %A.newtmp444, i32 %dispatch.result460)
+dispatch.ok444:                                   ; preds = %dispatch.ok436
+  %vtable.ptr447 = load ptr, ptr %self443, align 8
+  %method.ptr.addr448 = getelementptr ptr, ptr %vtable.ptr447, i64 14
+  %method.ptr449 = load ptr, ptr %method.ptr.addr448, align 8
+  %self450 = load ptr, ptr %this.addr, align 8
+  %avar.addr451 = getelementptr i8, ptr %self450, i32 16
+  %avar452 = load ptr, ptr %avar.addr451, align 8
+  %dispatch.result453 = call ptr %method.ptr449(ptr %self443, ptr %avar452)
+  %self454 = load ptr, ptr %this.addr, align 8
+  %dispatch.isnull457 = icmp eq ptr %self454, null
+  br i1 %dispatch.isnull457, label %dispatch.abort456, label %dispatch.ok455
+
+dispatch.abort445:                                ; preds = %dispatch.ok436
+  call void @abort()
+  unreachable
+
+dispatch.ok455:                                   ; preds = %dispatch.ok444
+  %vtable.ptr458 = load ptr, ptr %self454, align 8
+  %method.ptr.addr459 = getelementptr ptr, ptr %vtable.ptr458, i64 5
+  %method.ptr460 = load ptr, ptr %method.ptr.addr459, align 8
+  %dispatch.result461 = call ptr %method.ptr460(ptr %self454, ptr @.str.15037267644295846719)
   %self462 = load ptr, ptr %this.addr, align 8
-  %avar.addr463 = getelementptr i8, ptr %self462, i32 16
-  store ptr %dispatch.result461, ptr %avar.addr463, align 8
-  br label %ifcont464
+  %dispatch.isnull465 = icmp eq ptr %self462, null
+  br i1 %dispatch.isnull465, label %dispatch.abort464, label %dispatch.ok463
 
-dispatch.abort455:                                ; preds = %dispatch.ok445
+dispatch.abort456:                                ; preds = %dispatch.ok444
   call void @abort()
   unreachable
 
-ifcont464:                                        ; preds = %dispatch.ok454, %then440
-  %cond_result465 = phi ptr [ null, %then440 ], [ %dispatch.result461, %dispatch.ok454 ]
-  br label %ifcont466
+dispatch.ok463:                                   ; preds = %dispatch.ok455
+  %vtable.ptr466 = load ptr, ptr %self462, align 8
+  %method.ptr.addr467 = getelementptr ptr, ptr %vtable.ptr466, i64 14
+  %method.ptr468 = load ptr, ptr %method.ptr.addr467, align 8
+  %x469 = load ptr, ptr %x, align 8
+  %dispatch.result470 = call ptr %method.ptr468(ptr %self462, ptr %x469)
+  %self471 = load ptr, ptr %this.addr, align 8
+  %dispatch.isnull474 = icmp eq ptr %self471, null
+  br i1 %dispatch.isnull474, label %dispatch.abort473, label %dispatch.ok472
 
-ifcont466:                                        ; preds = %ifcont464, %then431
-  %cond_result467 = phi ptr [ %A.newtmp432, %then431 ], [ %cond_result465, %ifcont464 ]
-  br label %ifcont468
+dispatch.abort464:                                ; preds = %dispatch.ok455
+  call void @abort()
+  unreachable
 
-ifcont468:                                        ; preds = %ifcont466, %dispatch.ok416
-  %cond_result469 = phi ptr [ %x423, %dispatch.ok416 ], [ %cond_result467, %ifcont466 ]
-  br label %ifcont470
+dispatch.ok472:                                   ; preds = %dispatch.ok463
+  %vtable.ptr475 = load ptr, ptr %self471, align 8
+  %method.ptr.addr476 = getelementptr ptr, ptr %vtable.ptr475, i64 5
+  %method.ptr477 = load ptr, ptr %method.ptr.addr476, align 8
+  %dispatch.result478 = call ptr %method.ptr477(ptr %self471, ptr @.str.15336703179750707214)
+  %a479 = alloca ptr, align 8
+  %A2I.newtmp = call ptr @A2I.new()
+  store ptr %A2I.newtmp, ptr %a479, align 8
+  %self480 = load ptr, ptr %this.addr, align 8
+  %dispatch.isnull483 = icmp eq ptr %self480, null
+  br i1 %dispatch.isnull483, label %dispatch.abort482, label %dispatch.ok481
 
-ifcont470:                                        ; preds = %ifcont468, %dispatch.ok303
-  %cond_result471 = phi ptr [ %3, %dispatch.ok303 ], [ %cond_result469, %ifcont468 ]
-  br label %ifcont472
+dispatch.abort473:                                ; preds = %dispatch.ok463
+  call void @abort()
+  unreachable
 
-ifcont472:                                        ; preds = %ifcont470, %dispatch.ok281
-  %cond_result473 = phi ptr [ %2, %dispatch.ok281 ], [ %cond_result471, %ifcont470 ]
-  br label %ifcont474
+dispatch.ok481:                                   ; preds = %dispatch.ok472
+  %vtable.ptr484 = load ptr, ptr %self480, align 8
+  %method.ptr.addr485 = getelementptr ptr, ptr %vtable.ptr484, i64 5
+  %method.ptr486 = load ptr, ptr %method.ptr.addr485, align 8
+  %a487 = load ptr, ptr %a479, align 8
+  %dispatch.isnull490 = icmp eq ptr %a487, null
+  br i1 %dispatch.isnull490, label %dispatch.abort489, label %dispatch.ok488
 
-ifcont474:                                        ; preds = %ifcont472, %dispatch.ok259
-  %cond_result475 = phi ptr [ %1, %dispatch.ok259 ], [ %cond_result473, %ifcont472 ]
-  br label %ifcont476
+dispatch.abort482:                                ; preds = %dispatch.ok472
+  call void @abort()
+  unreachable
 
-ifcont476:                                        ; preds = %ifcont474, %dispatch.ok240
-  %cond_result477 = phi ptr [ %dispatch.result247, %dispatch.ok240 ], [ %cond_result475, %ifcont474 ]
-  br label %ifcont478
+dispatch.ok488:                                   ; preds = %dispatch.ok481
+  %vtable.ptr491 = load ptr, ptr %a487, align 8
+  %method.ptr.addr492 = getelementptr ptr, ptr %vtable.ptr491, i64 9
+  %method.ptr493 = load ptr, ptr %method.ptr.addr492, align 8
+  %r494 = load i32, ptr %r, align 4
+  %dispatch.result495 = call ptr %method.ptr493(ptr %a487, i32 %r494)
+  %dispatch.result496 = call ptr %method.ptr486(ptr %self480, ptr %dispatch.result495)
+  %self497 = load ptr, ptr %this.addr, align 8
+  %dispatch.isnull500 = icmp eq ptr %self497, null
+  br i1 %dispatch.isnull500, label %dispatch.abort499, label %dispatch.ok498
 
-ifcont478:                                        ; preds = %ifcont476, %case.end
-  %cond_result479 = phi ptr [ %case.result, %case.end ], [ %cond_result477, %ifcont476 ]
-  br label %ifcont480
+dispatch.abort489:                                ; preds = %dispatch.ok481
+  call void @abort()
+  unreachable
 
-ifcont480:                                        ; preds = %ifcont478, %dispatch.ok105
-  %cond_result481 = phi ptr [ %dispatch.result112, %dispatch.ok105 ], [ %cond_result479, %ifcont478 ]
+dispatch.ok498:                                   ; preds = %dispatch.ok488
+  %vtable.ptr501 = load ptr, ptr %self497, align 8
+  %method.ptr.addr502 = getelementptr ptr, ptr %vtable.ptr501, i64 5
+  %method.ptr503 = load ptr, ptr %method.ptr.addr502, align 8
+  %dispatch.result504 = call ptr %method.ptr503(ptr %self497, ptr @.str.18400681194753865968)
+  %x505 = load ptr, ptr %x, align 8
+  %self506 = load ptr, ptr %this.addr, align 8
+  %avar.addr507 = getelementptr i8, ptr %self506, i32 16
+  store ptr %x505, ptr %avar.addr507, align 8
+  br label %ifcont550
+
+dispatch.abort499:                                ; preds = %dispatch.ok488
+  call void @abort()
+  unreachable
+
+else508:                                          ; preds = %else394
+  %self509 = load ptr, ptr %this.addr, align 8
+  %char.addr510 = getelementptr i8, ptr %self509, i32 8
+  %char511 = load ptr, ptr %char.addr510, align 8
+  %eqtmp512 = call i1 @String_equals(ptr %char511, ptr @.str.10485857595211860659)
+  br i1 %eqtmp512, label %then513, label %else517
+
+then513:                                          ; preds = %else508
+  %A.newtmp514 = call ptr @A.new()
+  %self515 = load ptr, ptr %this.addr, align 8
+  %avar.addr516 = getelementptr i8, ptr %self515, i32 16
+  store ptr %A.newtmp514, ptr %avar.addr516, align 8
+  br label %ifcont548
+
+else517:                                          ; preds = %else508
+  %self518 = load ptr, ptr %this.addr, align 8
+  %char.addr519 = getelementptr i8, ptr %self518, i32 8
+  %char520 = load ptr, ptr %char.addr519, align 8
+  %eqtmp521 = call i1 @String_equals(ptr %char520, ptr @.str.747352984659061831)
+  br i1 %eqtmp521, label %then522, label %else525
+
+then522:                                          ; preds = %else517
+  %self523 = load ptr, ptr %this.addr, align 8
+  %flag.addr524 = getelementptr i8, ptr %self523, i32 32
+  store i1 false, ptr %flag.addr524, align 1
+  br label %ifcont546
+
+else525:                                          ; preds = %else517
+  %A.newtmp526 = call ptr @A.new()
+  %dispatch.isnull529 = icmp eq ptr %A.newtmp526, null
+  br i1 %dispatch.isnull529, label %dispatch.abort528, label %dispatch.ok527
+
+dispatch.ok527:                                   ; preds = %else525
+  %vtable.ptr530 = load ptr, ptr %A.newtmp526, align 8
+  %method.ptr.addr531 = getelementptr ptr, ptr %vtable.ptr530, i64 7
+  %method.ptr532 = load ptr, ptr %method.ptr.addr531, align 8
+  %self533 = load ptr, ptr %this.addr, align 8
+  %avar.addr534 = getelementptr i8, ptr %self533, i32 16
+  %avar535 = load ptr, ptr %avar.addr534, align 8
+  %dispatch.isnull538 = icmp eq ptr %avar535, null
+  br i1 %dispatch.isnull538, label %dispatch.abort537, label %dispatch.ok536
+
+dispatch.abort528:                                ; preds = %else525
+  call void @abort()
+  unreachable
+
+dispatch.ok536:                                   ; preds = %dispatch.ok527
+  %vtable.ptr539 = load ptr, ptr %avar535, align 8
+  %method.ptr.addr540 = getelementptr ptr, ptr %vtable.ptr539, i64 5
+  %method.ptr541 = load ptr, ptr %method.ptr.addr540, align 8
+  %dispatch.result542 = call i32 %method.ptr541(ptr %avar535)
+  %dispatch.result543 = call ptr %method.ptr532(ptr %A.newtmp526, i32 %dispatch.result542)
+  %self544 = load ptr, ptr %this.addr, align 8
+  %avar.addr545 = getelementptr i8, ptr %self544, i32 16
+  store ptr %dispatch.result543, ptr %avar.addr545, align 8
+  br label %ifcont546
+
+dispatch.abort537:                                ; preds = %dispatch.ok527
+  call void @abort()
+  unreachable
+
+ifcont546:                                        ; preds = %dispatch.ok536, %then522
+  %cond_result547 = phi ptr [ null, %then522 ], [ %dispatch.result543, %dispatch.ok536 ]
+  br label %ifcont548
+
+ifcont548:                                        ; preds = %ifcont546, %then513
+  %cond_result549 = phi ptr [ %A.newtmp514, %then513 ], [ %cond_result547, %ifcont546 ]
+  br label %ifcont550
+
+ifcont550:                                        ; preds = %ifcont548, %dispatch.ok498
+  %cond_result551 = phi ptr [ %x505, %dispatch.ok498 ], [ %cond_result549, %ifcont548 ]
+  br label %ifcont552
+
+ifcont552:                                        ; preds = %ifcont550, %ifcont392
+  %cond_result553 = phi ptr [ %cond_result393, %ifcont392 ], [ %cond_result551, %ifcont550 ]
+  br label %ifcont554
+
+ifcont554:                                        ; preds = %ifcont552, %dispatch.ok303
+  %cond_result555 = phi ptr [ %3, %dispatch.ok303 ], [ %cond_result553, %ifcont552 ]
+  br label %ifcont556
+
+ifcont556:                                        ; preds = %ifcont554, %dispatch.ok281
+  %cond_result557 = phi ptr [ %2, %dispatch.ok281 ], [ %cond_result555, %ifcont554 ]
+  br label %ifcont558
+
+ifcont558:                                        ; preds = %ifcont556, %dispatch.ok259
+  %cond_result559 = phi ptr [ %1, %dispatch.ok259 ], [ %cond_result557, %ifcont556 ]
+  br label %ifcont560
+
+ifcont560:                                        ; preds = %ifcont558, %dispatch.ok240
+  %cond_result561 = phi ptr [ %dispatch.result247, %dispatch.ok240 ], [ %cond_result559, %ifcont558 ]
+  br label %ifcont562
+
+ifcont562:                                        ; preds = %ifcont560, %case.end
+  %cond_result563 = phi ptr [ %case.result, %case.end ], [ %cond_result561, %ifcont560 ]
+  br label %ifcont564
+
+ifcont564:                                        ; preds = %ifcont562, %dispatch.ok105
+  %cond_result565 = phi ptr [ %dispatch.result112, %dispatch.ok105 ], [ %cond_result563, %ifcont562 ]
   br label %loop.cond
 }
 
@@ -3045,14 +3184,12 @@ entry:
   %parent.subobject = getelementptr inbounds %class.B, ptr %this, i32 0, i32 0
   call void @_ZN1AC2Ev(ptr %parent.subobject)
   store ptr @_ZTV1B, ptr %this, align 8
-  %var1.addr.byte = getelementptr i8, ptr %this, i64 16
-  store i32 0, ptr %var1.addr.byte, align 4
   ret void
 }
 
 define ptr @B.new() {
 entry:
-  %0 = call ptr @malloc(i64 24)
+  %0 = call ptr @malloc(i64 16)
   call void @_ZN1BC2Ev(ptr %0)
   ret ptr %0
 }
@@ -3069,7 +3206,7 @@ entry:
 
 define ptr @C.new() {
 entry:
-  %0 = call ptr @malloc(i64 24)
+  %0 = call ptr @malloc(i64 16)
   call void @_ZN1CC2Ev(ptr %0)
   ret ptr %0
 }
@@ -3086,7 +3223,7 @@ entry:
 
 define ptr @D.new() {
 entry:
-  %0 = call ptr @malloc(i64 24)
+  %0 = call ptr @malloc(i64 16)
   call void @_ZN1DC2Ev(ptr %0)
   ret ptr %0
 }
@@ -3103,7 +3240,7 @@ entry:
 
 define ptr @E.new() {
 entry:
-  %0 = call ptr @malloc(i64 24)
+  %0 = call ptr @malloc(i64 16)
   call void @_ZN1EC2Ev(ptr %0)
   ret ptr %0
 }

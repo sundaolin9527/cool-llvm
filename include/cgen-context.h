@@ -31,6 +31,7 @@ private:
     std::unique_ptr<LLVMContext> llvmContext_;
     // 循环上下文栈
     std::stack<LoopContext> loopStack;
+    std::string newClassName_;
 
 public:
     // 禁止拷贝
@@ -54,7 +55,7 @@ public:
     bool inLoop() const;
     int getLoopDepth() const;
 
-    void setNewClassName(std::string& newClassName);
+    void setNewClassName(const std::string& newClassName);
     std::string getNewClassName() const;
 };
 

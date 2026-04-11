@@ -24,12 +24,12 @@ std::string trim_trailing_carriage_return(std::string value) {
 }
 
 fs::path default_cases_dir(const fs::path& repo_root) {
-    const fs::path preferred = repo_root / "tests" / "unit" / "case";
+    const fs::path preferred = repo_root / "tests" / "unit" / "cases";
     if (fs::exists(preferred)) {
         return preferred;
     }
 
-    const fs::path legacy = repo_root / "tests" / "unit" / "cases";
+    const fs::path legacy = repo_root / "tests" / "unit" / "case";
     if (fs::exists(legacy)) {
         return legacy;
     }
@@ -105,6 +105,12 @@ std::vector<UnitTestCase> UnitTestFramework::discoverCases() const {
         testCase.expectedOutputPath = stemPath;
         testCase.expectedOutputPath += ".expected.txt";
         testCase.executablePath = options_.artifactsDir / (entry.path().stem().string() + executable_suffix());
+
+        // Keep executable golden tests opt-in so we can store exploratory or
+        // interactive examples in the cases tree without breaking the suite.
+        if (!fs::exists(testCase.expectedOutputPath)) {
+            continue;
+        }
 
         if (!options_.filter.empty() &&
             testCase.name.find(options_.filter) == std::string::npos &&

@@ -168,7 +168,7 @@ int SymbolTableManager::getFunctionDepth() const {
 bool SymbolTableManager::addLocalVar(const std::string& name, const std::string& typeName, 
                              llvm::Value* value) {
     if (auto* scope = currentScope()) {
-        scope->addVariable(name, VariableInfo::createLocal(value, getCurrentClassName(), typeName));
+        scope->addVariable(name, VariableInfo::createLocal(value, getCurrentClassName(), name, typeName));
         return true;
     }
     return false;
@@ -177,7 +177,7 @@ bool SymbolTableManager::addLocalVar(const std::string& name, const std::string&
 bool SymbolTableManager::addParam(const std::string& name, const std::string& typeName, 
                           llvm::Value* value) {
     if (auto* scope = currentScope()) {
-        scope->addVariable(name, VariableInfo::createParam(value, getCurrentClassName(), typeName));
+        scope->addVariable(name, VariableInfo::createParam(value, getCurrentClassName(), name, typeName));
         return true;
     }
     return false;
@@ -186,7 +186,12 @@ bool SymbolTableManager::addParam(const std::string& name, const std::string& ty
 bool SymbolTableManager::addStaticLocalVar(const std::string& funcName, 
                                    const std::string& varName,
                                    const std::string& typeName, llvm::Value* value) {
-    staticLocalVars[funcName][varName] = VariableInfo::createStaticMember(value, getCurrentClassName(), typeName);
+    staticLocalVars[funcName][varName] = VariableInfo::createStaticMember(
+        value,
+        getCurrentClassName(),
+        varName,
+        typeName
+    );
     return true;
 }
 
@@ -205,7 +210,7 @@ VariableInfo* SymbolTableManager::findStaticLocalVar(const std::string& funcName
 
 void SymbolTableManager::addGlobalVar(const std::string& name, const std::string& typeName, 
                               llvm::Value* value) {
-    globalVars[name] = VariableInfo::createGlobal(value, "", typeName);
+    globalVars[name] = VariableInfo::createGlobal(value, "", name, typeName);
 }
 
 VariableInfo* SymbolTableManager::findGlobalVar(const std::string& name) {

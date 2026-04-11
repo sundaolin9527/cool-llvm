@@ -1,0 +1,2 @@
+Welcome to the Game of Life.
+There are many initial states to choose from. 

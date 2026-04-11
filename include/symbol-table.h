@@ -136,23 +136,23 @@ struct ClassLayout {
     //类方法信息
     struct ClassMethodInfo {
         std::string name;
-        MethodType type;
-        method_class* method;
-        llvm::Function* func;
-        int vtableIndex;
+        MethodType type = METHOD_VIRTUAL;
+        method_class* method = nullptr;
+        llvm::Function* func = nullptr;
+        int vtableIndex = -1;
     };
     std::string name;           // 当前类的名字
     std::string parentName="";  // 父类名字
-    llvm::StructType* type;     // 当前类的类型
+    llvm::StructType* type = nullptr;     // 当前类的类型
     std::map<std::string, VariableInfo> ownAttributes; // 当前类自己的属性
     std::vector<std::string> attributeOrder; // 属性声明顺序
     std::map<std::string, attr_class*> attributeNodes; // 属性AST，供构造函数初始化使用
     std::vector<ClassMethodInfo> methods;  // 当前类自己的方法
-    llvm::GlobalVariable* vtable;  // 当前类的虚表
-    llvm::Function* constructor;   // 当前类的构造函数
-    llvm::Function* newFunc;       // 当前类的new函数
-    uint32_t classTag;             // 当前类的tag
-    uint32_t objectSize;           // 当前类的大小
+    llvm::GlobalVariable* vtable = nullptr;  // 当前类的虚表
+    llvm::Function* constructor = nullptr;   // 当前类的构造函数
+    llvm::Function* newFunc = nullptr;       // 当前类的new函数
+    uint32_t classTag = 0;             // 当前类的tag
+    uint32_t objectSize = 0;           // 当前类的大小
 };
 
 // ==================== 符号表管理器 ========================
