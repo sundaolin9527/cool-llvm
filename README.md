@@ -163,8 +163,7 @@ clang++ ../tests/unit/cases/example.actual.ll \
 - `make test-units`：运行全部单元测试
 - `make test-pass`：运行 LLVM Pass 文本测试
 - `make unit-test <filter>`：运行指定测试
-- `make dotest`：运行旧的 `example.cl` 演示链路
-- `make test-llvm`：对 `app/example.cl` 做最小 LLVM 生成验证
+- `make dotest`：运行example测试并打印IR
 
 ### 3.4 已知约束
 
