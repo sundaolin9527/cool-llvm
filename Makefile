@@ -1,4 +1,4 @@
-.PHONY: all compiler-all llvm-pass clean cgen cgen-llvm runtime-lib test-units unit-test test-pass dotest test-llvm output help
+.PHONY: all compiler-all llvm-pass clean cgen cgen-llvm gc-lib runtime-lib test-gc test-units unit-test test-pass dotest test-llvm output help
 
 UNIT_TEST_FILTER := $(strip $(filter-out unit-test,$(MAKECMDGOALS)))
 
@@ -22,9 +22,17 @@ cgen-llvm:
 	@echo "Building cgen-llvm..."
 	@cd app && $(MAKE) cgen-llvm
 
-runtime-lib:
+gc-lib:
+	@echo "Building GC library..."
+	@cd lib/gc && $(MAKE) all
+
+runtime-lib: gc-lib
 	@echo "Building runtime library..."
 	@cd lib/runtime && $(MAKE) all
+
+test-gc: gc-lib
+	@echo "Running GC tests..."
+	@cd tests/gc && $(MAKE) run
 
 llvm-pass:
 	@echo "Building LLVM pass plugin..."
@@ -33,8 +41,10 @@ llvm-pass:
 clean:
 	@echo "Cleaning..."
 	@cd app && $(MAKE) clean
+	@cd lib/gc && $(MAKE) clean
 	@cd lib/runtime && $(MAKE) clean
 	@cd passes && $(MAKE) clean
+	@cd tests/gc && $(MAKE) clean
 	@cd tests/unit && $(MAKE) clean
 	@cd tests/pass && $(MAKE) clean
 
@@ -74,6 +84,7 @@ help:
 	@echo "  llvm-pass  - Build the standalone LLVM pass plugin"
 	@echo "  clean      - Clean build artifacts"
 	@echo "  dotest     - Run tests and print IR"
+	@echo "  test-gc    - Build GC library and run GC-only tests"
 	@echo "  test-units - Build dependencies and run all executable-output unit tests"
 	@echo "  test-pass  - Build the LLVM pass plugin and run pass text-diff tests"
 	@echo "  unit-test <case> - Run executable-output unit tests matching one case/filter"

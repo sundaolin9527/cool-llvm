@@ -1,23 +1,35 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -fPIC
+CFLAGS = -Wall -Wextra -O2
 CFLAGS += -DCOOL_RUNTIME_EXPORT
 CFLAGS += -fvisibility=hidden
 CFLAGS += -Wno-unused-parameter -Wno-unused-function
+CFLAGS += -I. -I../gc
 
 TARGET = libruntime.so
+GC_LIB = ../gc/libcoolgc.a
 SRCS = runtime.c
-OBJS = $(SRCS:.c=.o)
+OBJS = runtime.o
+
+ifeq ($(OS),Windows_NT)
+RM_FILES = cmd /c "if exist runtime.o del /q /f runtime.o & if exist $(TARGET) del /q /f $(TARGET)" 2>nul
+else
+RM_FILES = rm -f $(OBJS) $(TARGET)
+endif
 
 all: $(TARGET)
 
-$(TARGET): $(OBJS)
-	$(CC) -shared -o $@ $(OBJS)
+$(TARGET): $(OBJS) $(GC_LIB)
+	$(CC) -shared -o $@ $(OBJS) $(GC_LIB)
+
+$(GC_LIB):
+	@echo "Missing $(GC_LIB). Build it first with: make -C ../gc all"
+	@false
 
 %.o: %.c runtime.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJS)
+	-$(RM_FILES)
 
 # 查看导出的符号
 exports:

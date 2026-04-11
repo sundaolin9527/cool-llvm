@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdint.h>
 #include "runtime.h"
+#include "../gc/gc.h"
 
 // ========== 虚函数表声明（这些在IR中已定义，这里只是声明）==========
 extern void* _ZTV6Object[];   // Object虚表
@@ -13,41 +14,23 @@ extern void* _ZTV2IO[];       // IO虚表
 
 // ========== 辅助函数 ==========
 
-typedef struct CoolStringRegistryNode {
-    const void* object_ptr;
-    struct CoolStringRegistryNode* next;
-} CoolStringRegistryNode;
-
-static CoolStringRegistryNode* g_cool_string_registry = NULL;
-
-static void register_cool_string_object(const void* object_ptr) {
-    CoolStringRegistryNode* node = (CoolStringRegistryNode*)malloc(sizeof(CoolStringRegistryNode));
-    if (!node) {
-        return;
-    }
-    node->object_ptr = object_ptr;
-    node->next = g_cool_string_registry;
-    g_cool_string_registry = node;
-}
-
 static CoolString* create_cool_string(const char* src) {
     if (!src) src = "";
     
-    CoolString* str = (CoolString*)malloc(sizeof(CoolString));
+    CoolString* str = (CoolString*)cool_gc_malloc(sizeof(CoolString));
     if (!str) return NULL;
     
     str->parent.vtable = _ZTV6String;
-    str->length = strlen(src);
+    str->length = (int32_t)strlen(src);
     str->_padding0 = 0;
     str->capacity = str->length + 1;
     str->_padding1 = 0;
-    str->data = (char*)malloc(str->capacity);
+    str->data = (char*)cool_raw_malloc((size_t)str->capacity);
 
     if (str->data) {
         strcpy(str->data, src);
-        register_cool_string_object(str);
     } else {
-        free(str);
+        cool_gc_free(str);
         return NULL;
     }
     
@@ -55,15 +38,11 @@ static CoolString* create_cool_string(const char* src) {
 }
 
 static int is_cool_string_object(const void* ptr) {
-    if (!ptr) {
+    const CoolObject* obj = (const CoolObject*)ptr;
+    if (!ptr || !cool_gc_contains_pointer(ptr)) {
         return 0;
     }
-    for (CoolStringRegistryNode* node = g_cool_string_registry; node != NULL; node = node->next) {
-        if (node->object_ptr == ptr) {
-            return 1;
-        }
-    }
-    return 0;
+    return obj->vtable == _ZTV6String;
 }
 
 static const char* cool_string_data(const void* ptr) {
@@ -90,13 +69,13 @@ static size_t cool_string_length(const void* ptr) {
 
 static void free_cool_string(CoolString* str) {
     if (str) {
-        if (str->data) free(str->data);
-        free(str);
+        if (str->data) cool_raw_free(str->data);
+        cool_gc_free(str);
     }
 }
 
 static CoolInt* create_cool_int(int32_t value) {
-    CoolInt* obj = (CoolInt*)malloc(sizeof(CoolInt));
+    CoolInt* obj = (CoolInt*)cool_gc_malloc(sizeof(CoolInt));
     if (!obj) return NULL;
     obj->parent.vtable = _ZTV3Int;
     obj->value = value;
@@ -105,7 +84,7 @@ static CoolInt* create_cool_int(int32_t value) {
 }
 
 static CoolBool* create_cool_bool(int8_t value) {
-    CoolBool* obj = (CoolBool*)malloc(sizeof(CoolBool));
+    CoolBool* obj = (CoolBool*)cool_gc_malloc(sizeof(CoolBool));
     if (!obj) return NULL;
     obj->parent.vtable = _ZTV4Bool;
     obj->value = value;
@@ -216,14 +195,14 @@ void* String_concat(void* this_ptr, void* other_ptr) {
     const char* s1 = cool_string_data(this_ptr);
     const char* s2 = cool_string_data(other_ptr);
     const int new_len = (int)(strlen(s1) + strlen(s2));
-    char* new_data = (char*)malloc(new_len + 1);
+    char* new_data = (char*)cool_raw_malloc((size_t)new_len + 1u);
     if (!new_data) return create_cool_string("");
     
     strcpy(new_data, s1);
     strcat(new_data, s2);
     
     CoolString* result = create_cool_string(new_data);
-    free(new_data);
+    cool_raw_free(new_data);
     
     return result;
 }
@@ -247,14 +226,14 @@ void* String_substr(void* this_ptr, int start, int length) {
         return create_cool_string("");
     }
     
-    char* substr = (char*)malloc(length + 1);
+    char* substr = (char*)cool_raw_malloc((size_t)length + 1u);
     if (!substr) return create_cool_string("");
     
     strncpy(substr, str + start, length);
     substr[length] = '\0';
     
     CoolString* result = create_cool_string(substr);
-    free(substr);
+    cool_raw_free(substr);
     
     return result;
 }
