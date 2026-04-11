@@ -190,3 +190,7 @@ clang++ ../tests/unit/cases/example.actual.ll \
 - `app/Makefile` 明确要求 `llvm-config-16` 在 PATH 中可见。
 - 测试 runner 默认会给被测程序输入 `q\n`，便于退出交互式示例。
 - 运行时库当前生成 Linux 共享库 `libruntime.so`，因此不建议把原生 Windows 作为首选部署平台。
+
+## 4. TODO LIST
+- 有内存泄露问题，需要实现 gc 算法，优先考虑三色增量gc，可参考luajit 2.1 (单线程的gc)
+- ci
