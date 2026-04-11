@@ -1,3 +1,7 @@
+#if !defined(_WIN32) && !defined(_DEFAULT_SOURCE)
+#define _DEFAULT_SOURCE 1
+#endif
+
 #include "gc.h"
 
 #include <limits.h>
@@ -10,6 +14,10 @@
 #else
   #include <sys/mman.h>
   #include <unistd.h>
+
+  #if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
+    #define MAP_ANONYMOUS MAP_ANON
+  #endif
 #endif
 
 #define COOL_GC_ALIGN ((size_t)sizeof(void*))
