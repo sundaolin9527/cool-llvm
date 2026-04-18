@@ -1,5 +1,7 @@
 # COOL Compiler with LLVM Backend
 
+English version: [README.md](README.md)
+
 ## 1. 部署
 
 ### 1.1 推荐环境
