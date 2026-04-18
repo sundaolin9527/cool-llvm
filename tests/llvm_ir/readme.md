@@ -1,9 +1,11 @@
-# LLVM IR 最小验证
+# Minimal LLVM IR Verification
 
-## 1. 部署
+Simplified Chinese version: [README-zh-CN.md](README-zh-CN.md)
 
-这个目录用于验证“手写 LLVM IR + C 目标文件”能否被正常编译、链接和运行。
-建议在 Linux/WSL 中执行，提前安装 `gcc` 和 LLVM 工具链。
+## 1. Setup
+
+This directory verifies whether "handwritten LLVM IR + C object files" can be compiled, linked, and run correctly.
+Run it in Linux/WSL, with `gcc` and the LLVM toolchain installed in advance.
 
 Ubuntu / Debian:
 
@@ -12,16 +14,16 @@ sudo apt-get update
 sudo apt-get install -y build-essential llvm-16 clang
 ```
 
-确认工具可用：
+Make sure the tools are available:
 
 ```bash
 gcc --version
 llc --version
 ```
 
-## 2. 测试
+## 2. Test
 
-在当前目录执行：
+Run this in the current directory:
 
 ```bash
 gcc -c myfunc.c -o myfunc.o
@@ -30,16 +32,16 @@ gcc -no-pie main.o myfunc.o -o program
 ./program
 ```
 
-如果只想重跑最后一步，也可以直接执行：
+If you only want to rerun the final step, execute:
 
 ```bash
 ./program
 ```
 
-## 3. 目录细节
+## 3. Directory Details
 
-- `main.ll`：手写 LLVM IR 示例
-- `myfunc.c`：由 IR 调用的 C 函数
-- `demo.ll`：额外的 IR 示例文件
+- `main.ll`: handwritten LLVM IR example
+- `myfunc.c`: C function called from IR
+- `demo.ll`: additional IR example file
 
-这个目录不依赖仓库根目录的 `Makefile`，适合快速排查 LLVM 工具链本身是否可用。
+This directory does not depend on the repository root `Makefile`, so it is useful for quickly checking whether the LLVM toolchain itself works.

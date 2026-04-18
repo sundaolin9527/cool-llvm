@@ -1,15 +1,17 @@
 # LLVM Pass Development
 
-这个目录用于存放当前项目的独立 LLVM Pass 插件源码和构建文件。
+Simplified Chinese version: [README-zh-CN.md](README-zh-CN.md)
 
-## 目录约定
+This directory stores the standalone LLVM Pass plugin sources and build files for this project.
 
-- `*.cpp`：每个源文件对应一个独立 LLVM 16 Pass 插件
-- `Makefile`：自动发现当前目录下所有 `.cpp`，并生成对应的 `.so` 插件
+## Directory Conventions
 
-## 当前 pass
+- `*.cpp`: each source file corresponds to one standalone LLVM 16 Pass plugin
+- `Makefile`: automatically discovers all `.cpp` files in this directory and builds matching `.so` plugins
 
-当前目录保留了一个示例 pass `CoolModuleSummaryPass.cpp`，同时新增了 7 个与作业要求对应的 pass：
+## Current Passes
+
+This directory keeps one sample pass, `CoolModuleSummaryPass.cpp`, and adds 7 passes that correspond to the assignment requirements:
 
 - `GlobalDeadCodeElimPass.cpp`
 - `InterProceduralConstantPropPass.cpp`
@@ -19,29 +21,29 @@
 - `LocalPinholeOptimizationPass.cpp`
 - `RegSpillDetectorPass.cpp`
 
-这些 pass 都基于 LLVM 16 的 New Pass Manager 插件接口实现，测试时按 case 单独加载对应 `.so` 和 pipeline。
+All of these passes are implemented with the LLVM 16 New Pass Manager plugin interface. Tests load each corresponding `.so` and pipeline per case.
 
-其中 `RegSpillDetectorPass` 由于当前测试链路停在 `opt`/LLVM IR，没有真正进入 Machine IR，因此采用了“IR 级活跃值近似寄存器压力”的前置探测方案，并把结果写入命名元数据。
+Because the current test path stops at `opt` and LLVM IR without entering Machine IR, `RegSpillDetectorPass` uses a preliminary "IR-level live-value approximation of register pressure" strategy and writes the result into named metadata.
 
-## 构建
+## Build
 
-在仓库根目录执行：
+Run this from the repository root:
 
 ```bash
 make llvm-pass
 ```
 
-或在当前目录执行：
+Or run this in the current directory:
 
 ```bash
 make
 ```
 
-只要把新的 pass 源码文件放进当前目录，例如 `MyAnalysisPass.cpp`，执行 `make` 时就会自动额外产出 `libMyAnalysisPass.so`，不需要修改 `Makefile`。
+When a new pass source file is added to this directory, for example `MyAnalysisPass.cpp`, `make` automatically produces `libMyAnalysisPass.so`; no `Makefile` change is required.
 
-## 手动验证
+## Manual Verification
 
-如果环境里有 `opt-16`，可以直接对任意 `.ll` 文件运行：
+If `opt-16` is available in your environment, you can run any `.ll` file directly:
 
 ```bash
 opt-16 \

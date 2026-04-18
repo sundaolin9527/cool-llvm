@@ -1,32 +1,34 @@
-# GC 运行时测试
+# GC Runtime Tests
 
-这个目录只负责 GC 自身的测试用例与测试构建，不承担 `tests/unit` 或 `lib/runtime` 的构建职责。
+Simplified Chinese version: [README-zh-CN.md](README-zh-CN.md)
 
-## 1. 构建与运行
+This directory is responsible only for GC-specific test cases and test builds. It does not build `tests/unit` or `lib/runtime`.
 
-在当前目录执行：
+## 1. Build and Run
+
+Run this in the current directory:
 
 ```bash
 make run
 ```
 
-如果只想构建可执行文件：
+To build only the executable:
 
 ```bash
 make build
 ```
 
-## 2. 依赖关系
+## 2. Dependencies
 
-- GC 实现源码与构建入口：`lib/gc/`
-- GC 测试源码：`tests/gc/gc_runtime_test.c`
-- GC 测试构建入口：`tests/gc/Makefile`
+- GC implementation sources and build entry point: `lib/gc/`
+- GC test source: `tests/gc/gc_runtime_test.c`
+- GC test build entry point: `tests/gc/Makefile`
 
-本目录会通过 `lib/gc/Makefile` 生成 `libcoolgc_test.a`，然后再链接本目录下的测试可执行文件。
+This directory uses `lib/gc/Makefile` to build `libcoolgc_test.a`, then links the test executable in this directory.
 
-## 3. 覆盖范围
+## 3. Coverage
 
-- 显式根保活
-- 不可达环回收
-- 增量 step 推进
-- 黑对象写入新白对象后的修复路径
+- Explicit roots keeping objects alive
+- Collection of unreachable cycles
+- Incremental step progress
+- The repair path after a black object points to a newly allocated white object

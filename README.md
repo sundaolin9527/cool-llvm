@@ -1,13 +1,15 @@
 # COOL Compiler with LLVM Backend
 
-## 1. 部署
+Simplified Chinese version: [README-zh-CN.md](README-zh-CN.md)
 
-### 1.1 推荐环境
+## 1. Setup
 
-本项目当前以 Linux/WSL 为主开发环境，优先在 Ubuntu 20.04+/Debian 12+ 部署。  
-如果你在 Windows 上工作，建议直接使用 WSL2；仓库默认依赖 GNU Make、`llvm-config-16` 和 `.so` 运行时库，原生 PowerShell 环境通常无法直接完成构建。
+### 1.1 Recommended Environment
 
-### 1.2 依赖安装
+This project is currently developed mainly for Linux/WSL, with Ubuntu 20.04+ or Debian 12+ preferred.
+If you work on Windows, WSL2 is recommended. The repository depends on GNU Make, `llvm-config-16`, and `.so` runtime libraries by default, so a native PowerShell environment usually cannot build it directly.
+
+### 1.2 Install Dependencies
 
 Ubuntu / Debian:
 
@@ -16,7 +18,7 @@ sudo apt-get update
 sudo apt-get install -y build-essential make flex bison clang llvm-16 llvm-16-dev libfl-dev
 ```
 
-部署前请确认下面几个命令可用：
+Before building, make sure the following commands are available:
 
 ```bash
 llvm-config-16 --version (16.0.6)
@@ -26,15 +28,15 @@ bison --version          (3.5.1)
 make --version           (4.2.1)
 ```
 
-### 1.3 构建项目
+### 1.3 Build the Project
 
-在仓库根目录执行：
+Run this from the repository root:
 
 ```bash
 make all
 ```
 
-常用构建目标：
+Common build targets:
 
 ```bash
 make help
@@ -46,74 +48,74 @@ make runtime-lib
 make test-gc
 ```
 
-构建产物说明：
+Build artifacts:
 
-- `app/cgen`：传统代码生成器目标
-- `app/cgen-llvm`：LLVM IR 代码生成器
-- `lib/gc/libcoolgc.a`：GC 核心静态库
-- `lib/runtime/libruntime.so`：运行时库
-- `passes/libCoolModuleSummaryPass.so`：独立 LLVM Pass 插件
+- `app/cgen`: traditional code generator target
+- `app/cgen-llvm`: LLVM IR code generator
+- `lib/gc/libcoolgc.a`: GC core static library
+- `lib/runtime/libruntime.so`: runtime library
+- `passes/libCoolModuleSummaryPass.so`: standalone LLVM Pass plugin
 
-`passes/Makefile` 会自动扫描 `passes/*.cpp` 并为每个源码生成同名共享库，例如 `FooPass.cpp -> libFooPass.so`。
-`lib/gc/Makefile` 单独负责 GC 核心源码的构建；`lib/runtime/Makefile` 只负责运行时自身源码，并链接 `lib/gc/libcoolgc.a`，不再直接编译 `lib/gc/` 下的源码。
+`passes/Makefile` automatically scans `passes/*.cpp` and builds a shared library with the same base name for each source file, for example `FooPass.cpp -> libFooPass.so`.
+`lib/gc/Makefile` builds only the GC core sources. `lib/runtime/Makefile` builds only the runtime sources and links `lib/gc/libcoolgc.a`; it no longer compiles sources under `lib/gc/` directly.
 
-如果你切换了架构、LLVM 版本或编译环境，先清理再重建：
+If you change architecture, LLVM version, or compiler environment, clean and rebuild:
 
 ```bash
 make clean
 make all
 ```
 
-## 2. 测试
+## 2. Tests
 
-### 2.1 运行 GC 专项测试
+### 2.1 Run GC Tests
 
 ```bash
 make test-gc
 ```
 
-这个目标会先构建 `lib/gc/libcoolgc.a`，再进入 `tests/gc` 执行 GC 专项测试。  
-GC 用例当前覆盖：
+This target builds `lib/gc/libcoolgc.a` first, then enters `tests/gc` and runs the GC-specific tests.
+The current GC cases cover:
 
-- 显式根注册与存活验证
-- 不可达环回收
-- 增量 `step` 推进到完整回收周期
-- 黑对象写入新白对象后的修复路径
+- Explicit root registration and liveness checks
+- Collection of unreachable cycles
+- Incremental `step` progress through a full collection cycle
+- The repair path after a black object points to a newly allocated white object
 
-### 2.2 运行全部单元测试
+### 2.2 Run All Unit Tests
 
 ```bash
 make test-units
 ```
 
-这个目标会先构建 `cgen-llvm` 和运行时库，再进入 `tests/unit` 执行可执行产物 golden tests。
-当前默认会从 `tests/unit/cases/` 发现并执行 19 个 `.cl` 用例。
+This target builds `cgen-llvm` and the runtime library first, then enters `tests/unit` and runs executable golden tests.
+By default, it discovers and runs 19 `.cl` cases from `tests/unit/cases/`.
 
-### 2.3 运行单个或一组测试
+### 2.3 Run One Test or a Test Group
 
 ```bash
 make unit-test example.cl
 make unit-test cells.cl
 ```
 
-`unit-test` 支持按文件名或关键字过滤。
+`unit-test` supports filtering by file name or keyword.
 
-### 2.4 运行 LLVM Pass 测试
+### 2.4 Run LLVM Pass Tests
 
 ```bash
 make test-pass
 ```
 
-这个目标会先构建 `passes/` 下的 pass 插件，再对 `tests/pass/cases/*.input.ll` 执行 `opt`，最后同时校验 `.expected.ll` 文本输出和 `.expected.txt` 运行结果。
+This target builds the pass plugins under `passes/`, runs `opt` on `tests/pass/cases/*.input.ll`, and then checks both `.expected.ll` textual output and `.expected.txt` program output.
 
-### 2.5 仅构建测试 runner
+### 2.5 Build Only the Test Runner
 
 ```bash
 cd tests/unit
 make build
 ```
 
-### 2.6 直接运行测试 runner
+### 2.6 Run the Test Runner Directly
 
 ```bash
 cd tests/unit
@@ -124,46 +126,46 @@ cd tests/unit
 ./unit_test_runner --program-input "q\n"
 ```
 
-GC 专项 runner 也可以单独执行：
+The GC-specific runner can also be executed directly:
 
 ```bash
 cd tests/gc
 make run
 ```
 
-### 2.7 查看已发现用例
+### 2.7 Inspect Discovered Cases
 
-当你新增、迁移或同步用例后，建议先列出 runner 实际发现的测试，再决定是否继续跑全量：
+After adding, moving, or syncing cases, list the tests discovered by the runner before running the full suite:
 
 ```bash
 cd tests/unit
 ./unit_test_runner --list
 ```
 
-如果 `--list` 输出的总数和你预期不一致，先检查：
+If the total count from `--list` does not match your expectation, check:
 
-- 用例是否位于 `tests/unit/cases/`
-- 是否同时存在 `name.cl` 和非空的 `name.expected.txt`
-- 文件名是否同名配对
+- Whether the case is under `tests/unit/cases/`
+- Whether both `name.cl` and a non-empty `name.expected.txt` exist
+- Whether paired files use the same base name
 
-更细的用例维护约定可以参考 `tests/unit/cases/README.md`。
+For more detailed case maintenance rules, see `tests/unit/cases/README.md`.
 
-### 2.8 测试框架组织
+### 2.8 Test Framework Layout
 
-`tests/unit` 和 `tests/pass` 现在共用 `tests/` 根目录下的通用 golden 测试框架：
+`tests/unit` and `tests/pass` now share the common golden test framework under the `tests/` root:
 
 - `tests/golden_test_framework.h`
 - `tests/golden_test_framework.cpp`
 - `tests/golden_test_main.cpp`
 - `tests/unit_test_suite_main.cpp`
 
-两个 suite 共用同一套框架实现；`unit` 额外有一个轻量包装入口用于保留 `./unit_test_runner` 的直接使用方式。
+Both suites use the same framework implementation. The `unit` suite additionally has a lightweight wrapper entry point to preserve direct `./unit_test_runner` usage.
 
-`tests/gc` 不复用这套 golden 框架，它只负责 GC 自身的构建与运行验证，并通过 `tests/gc/Makefile` 调用 `lib/gc/Makefile` 生成测试所需的 `libcoolgc_test.a`。
+`tests/gc` does not reuse this golden framework. It only builds and verifies the GC itself, and calls `lib/gc/Makefile` through `tests/gc/Makefile` to produce the `libcoolgc_test.a` needed by the tests.
 
-### 2.9 手动验证 LLVM 生成链路
+### 2.9 Manually Verify the LLVM Generation Path
 
-如果你只想验证编译器输出的 IR 能否链接运行：
+If you only want to verify that compiler-generated IR can be linked and run:
 
 ```bash
 cd app
@@ -183,9 +185,9 @@ clang++ ../tests/unit/cases/example.actual.ll \
 
 ### 2.10 CI
 
-仓库已经提供 Gitee Go 流水线配置 `/.workflow/ci.yml`，当前按 Ubuntu 20.04 + LLVM 16.0.6 约束执行。
+The repository includes a Gitee Go pipeline configuration at `/.workflow/ci.yml`, currently constrained to Ubuntu 20.04 and LLVM 16.0.6.
 
-默认流水线会调用：
+The default pipeline runs:
 
 - `scripts/ci/install_ubuntu2004_llvm1606.sh`
 - `make all`
@@ -193,163 +195,163 @@ clang++ ../tests/unit/cases/example.actual.ll \
 - `make test-units`
 - `make test-pass`
 
-当前配置使用 `shell@agent`，因此需要在 Gitee Go 中准备一个 Ubuntu 20.04 主机组，并把 `/.workflow/ci.yml` 里的 `hostGroupID` 改成你实际的主机组 ID。
+The current configuration uses `shell@agent`, so you need to prepare an Ubuntu 20.04 host group in Gitee Go and replace the `hostGroupID` in `/.workflow/ci.yml` with the actual host group ID.
 
-## 3. 项目细节
+## 3. Project Details
 
-### 3.1 项目目标
+### 3.1 Project Goal
 
-这是一个 COOL 编译器实验项目，核心目标是把 COOL 程序经过词法、语法、语义分析后，生成 LLVM IR，并链接自定义运行时库得到可执行文件。
+This is a COOL compiler lab project. Its main goal is to compile COOL programs through lexical, syntax, and semantic analysis, generate LLVM IR, and link a custom runtime library to produce an executable.
 
-### 3.2 主要目录
+### 3.2 Main Directories
 
-- `app/`：编译器主程序与 LLVM 后端实现
-- `bin/.i686/`：课程提供的 `lexer`、`parser`、`semant` 等工具链
-- `lib/runtime/`：运行时库源码与 `libruntime.so`
-- `lib/gc/`：GC 核心算法源码、GC 专属 Makefile 与静态库产物
-- `passes/`：LLVM 16 Pass 插件源码与独立构建脚本
-- `scripts/ci/`：Gitee CI 依赖安装与构建测试脚本
-- `tests/gc/`：GC 专项测试与 GC 测试专属 Makefile
-- `tests/unit/`：可执行结果 golden tests
-- `tests/unit/cases/`：当前实际维护的 19 个可执行 COOL golden case
-- `tests/pass/`：LLVM Pass 的文本回归测试
-- `tests/llvm_ir/`：手工 LLVM IR / C 混合链接示例
-- `examples/`：参考 COOL 示例程序；如果需要纳入自动回归，请同步到 `tests/unit/cases/`
-- `doc/`：课程资料与实验记录
+- `app/`: compiler programs and LLVM backend implementation
+- `bin/.i686/`: course-provided `lexer`, `parser`, `semant`, and related tools
+- `lib/runtime/`: runtime library sources and `libruntime.so`
+- `lib/gc/`: GC core algorithm sources, GC-specific Makefile, and static library artifacts
+- `passes/`: LLVM 16 Pass plugin sources and standalone build scripts
+- `scripts/ci/`: Gitee CI dependency installation and build/test scripts
+- `tests/gc/`: GC-specific tests and GC test Makefile
+- `tests/unit/`: executable-result golden tests
+- `tests/unit/cases/`: the 19 executable COOL golden cases currently maintained
+- `tests/pass/`: textual regression tests for LLVM Passes
+- `tests/llvm_ir/`: handwritten LLVM IR and C mixed-linking examples
+- `examples/`: reference COOL example programs; sync them to `tests/unit/cases/` to include them in automatic regression tests
+- `doc/`: course materials and lab notes
 
-### 3.3 顶层 Makefile 目标
+### 3.3 Top-Level Makefile Targets
 
-- `make all`：构建主要编译目标
-- `make cgen`：构建传统代码生成器
-- `make cgen-llvm`：构建 LLVM 代码生成器
-- `make gc-lib`：构建 GC 静态库
-- `make llvm-pass`：构建独立 LLVM Pass 插件
-- `make runtime-lib`：构建运行时库
-- `make test-gc`：运行 GC 专项测试
-- `make test-units`：运行全部单元测试
-- `make test-pass`：运行 LLVM Pass 文本测试
-- `make unit-test <filter>`：运行指定测试
-- `make dotest`：运行example测试并打印IR
+- `make all`: build the main compiler targets
+- `make cgen`: build the traditional code generator
+- `make cgen-llvm`: build the LLVM code generator
+- `make gc-lib`: build the GC static library
+- `make llvm-pass`: build standalone LLVM Pass plugins
+- `make runtime-lib`: build the runtime library
+- `make test-gc`: run GC-specific tests
+- `make test-units`: run all unit tests
+- `make test-pass`: run LLVM Pass textual tests
+- `make unit-test <filter>`: run selected tests
+- `make dotest`: run the example test and print IR
 
-### 3.4 GC 算法细节
+### 3.4 GC Algorithm Details
 
-当前 `lib/gc/` 实现的是一个非移动、增量推进的三色标记清扫回收器，GC 状态机定义在 `CoolGCState` 中，包含：
+The current `lib/gc/` implementation is a non-moving, incrementally advanced tri-color mark-and-sweep collector. The GC state machine is defined by `CoolGCState` and includes:
 
 - `COOL_GC_PAUSE`
 - `COOL_GC_PROPAGATE`
 - `COOL_GC_ATOMIC`
 - `COOL_GC_SWEEP`
 
-#### 3.4.1 对象模型与颜色位
+#### 3.4.1 Object Model and Color Bits
 
-每个受管对象前面都有一个 `CoolGCHeader`，记录：
+Each managed object is preceded by a `CoolGCHeader`, which stores:
 
-- 对象魔数
-- 颜色位与状态标记
-- 载荷大小与底层映射大小
-- 分配链表指针
-- 灰色队列指针
+- Object magic number
+- Color bits and state flags
+- Payload size and underlying mapping size
+- Allocation-list pointers
+- Gray-queue pointer
 
-颜色采用三色抽象实现：
+Colors implement the tri-color abstraction:
 
-- 当前白色：本轮新分配对象所在颜色
-- 另一白色：本轮待回收候选颜色
-- 灰色：已发现但尚未扫描引用
-- 黑色：已扫描完成
+- Current white: the color used for newly allocated objects in the current round
+- Other white: the collection candidate color for the current round
+- Gray: discovered but not yet scanned
+- Black: fully scanned
 
-每次启动新一轮 GC 时，会翻转 `current_white`。这样上一轮留下的“另一种白色”自然就成为本轮可回收候选，无需遍历整堆给所有对象重置初始颜色。
+When a new GC cycle starts, `current_white` is flipped. Objects left in the previous round's other-white color naturally become collection candidates for the new round, without traversing the whole heap to reset initial colors.
 
-#### 3.4.2 根集合来源
+#### 3.4.2 Root Sources
 
-当前实现同时支持两类根：
+The current implementation supports two root sources:
 
-- 显式注册根：通过 `cool_gc_register_root` / `cool_gc_unregister_root` 把 `void**` 槽位挂入根链表
-- 栈扫描根：记录栈锚点后，按机器字宽对当前栈区间做保守扫描
+- Explicitly registered roots: `cool_gc_register_root` / `cool_gc_unregister_root` attach `void**` slots to the root list
+- Stack-scanned roots: after recording a stack anchor, the current stack range is conservatively scanned by machine word
 
-其中栈根扫描可以通过 `cool_gc_set_stack_roots_enabled(0)` 关闭。GC 专项测试默认关闭栈扫描，只验证显式根行为，这样测试结果更稳定也更可控。
+Stack root scanning can be disabled with `cool_gc_set_stack_roots_enabled(0)`. GC-specific tests disable stack scanning by default and verify only explicit root behavior, which makes test results more stable and controllable.
 
-#### 3.4.3 增量执行流程
+#### 3.4.3 Incremental Execution Flow
 
-`cool_gc_step()` 每次只推进有限预算：
+Each `cool_gc_step()` advances only a limited budget:
 
-- 传播阶段最多处理 `COOL_GC_STEP_BUDGET` 个灰对象
-- 清扫阶段最多处理 `COOL_GC_SWEEP_BUDGET` 个对象
+- The propagation phase processes at most `COOL_GC_STEP_BUDGET` gray objects
+- The sweep phase processes at most `COOL_GC_SWEEP_BUDGET` objects
 
-大致流程如下：
+The flow is roughly:
 
-1. 在 `PAUSE` 状态启动新周期，翻转白色并重新扫描根集合
-2. 进入 `PROPAGATE`，不断弹出灰对象，扫描其载荷中的潜在引用，再把对象染成黑色
-3. 当灰队列清空后进入 `ATOMIC`，再次扫描根和黑堆，收敛剩余引用
-4. 进入 `SWEEP`，按预算增量释放不可达白对象，并把存活对象重新染回当前白色
-5. 清扫完成后回到 `PAUSE`
+1. Start a new cycle in `PAUSE`, flip the white color, and rescan roots
+2. Enter `PROPAGATE`, repeatedly pop gray objects, scan their payloads for possible references, and turn them black
+3. When the gray queue is empty, enter `ATOMIC`, rescan roots and the black heap, and converge remaining references
+4. Enter `SWEEP`, incrementally free unreachable white objects by budget, and recolor survivors back to current white
+5. Return to `PAUSE` after sweeping completes
 
-除了增量 `step` 外，还提供 `cool_gc_force_full()`，会直接完成一次完整的 stop-the-world 全堆回收，适合测试、关闭运行时或内存压力过大时兜底使用。
+In addition to incremental `step`, `cool_gc_force_full()` completes a full stop-the-world heap collection directly. It is useful for tests, runtime shutdown, or fallback under memory pressure.
 
-#### 3.4.4 黑到白引用修复策略
+#### 3.4.4 Black-to-White Reference Repair
 
-当前实现没有单独暴露写屏障 API，也没有使用卡表或分代 remembered set。  
-为了修复“黑对象在增量过程中写入新白对象”这一典型三色不变式破坏场景，GC 在增量推进和原子阶段都会重新扫描黑色对象集合：
+The current implementation does not expose a separate write-barrier API, and it does not use card tables or generational remembered sets.
+To repair the typical tri-color invariant violation where a black object writes a reference to a new white object during incremental collection, the GC rescans the black object set during incremental progress and the atomic phase:
 
 - `cool_gc_rescan_black_heap()`
 
-这是一种更直接但成本较高的修复策略，优点是实现简单、接口侵入性低，缺点是黑堆重扫会增加每个增量步的额外开销。
+This direct repair strategy has higher cost, but it keeps the implementation simple and avoids invasive runtime interfaces. Its drawback is that black-heap rescanning adds overhead to each incremental step.
 
-#### 3.4.5 指针识别与扫描方式
+#### 3.4.5 Pointer Recognition and Scanning
 
-对象扫描是保守式的。GC 会把对象载荷和栈区间按机器字宽切分，把每个字值都当作潜在指针，再到分配链表里查找它是否落在某个受管对象的有效范围内。
+Object scanning is conservative. The GC splits object payloads and stack ranges by machine word, treats each word as a potential pointer, and checks whether it falls inside the valid range of any managed object in the allocation list.
 
-这带来两个行为特征：
+This has two behavioral properties:
 
-- 允许识别落在对象内部的 interior pointer，而不要求必须正好指向对象起始地址
-- 可能把“看起来像地址的普通整数”误判为存活引用，从而延迟回收，但不会错误释放仍可达对象
+- Interior pointers are recognized, so a pointer does not need to refer exactly to the object start address
+- Ordinary integers that look like addresses may be misidentified as live references, which can delay collection but will not incorrectly free reachable objects
 
-#### 3.4.6 受管对象与原始对象分离
+#### 3.4.6 Managed Objects and Raw Objects
 
-GC 目录里同时维护两套分配：
+The GC directory maintains two allocation families:
 
-- `cool_gc_malloc` / `cool_gc_calloc` / `cool_gc_free`：受 GC 管理的对象
-- `cool_raw_malloc` / `cool_raw_calloc` / `cool_raw_free`：不参与追踪的原始块
+- `cool_gc_malloc` / `cool_gc_calloc` / `cool_gc_free`: GC-managed objects
+- `cool_raw_malloc` / `cool_raw_calloc` / `cool_raw_free`: raw blocks that are not traced
 
-原始块带有独立的 `CoolRawHeader` 链表，适合放：
+Raw blocks have a separate `CoolRawHeader` list and are suitable for:
 
-- 根节点元数据
-- 字符串缓冲区
-- 其他不希望被保守扫描误处理的小块辅助内存
+- Root-node metadata
+- String buffers
+- Small helper allocations that should not be conservatively scanned
 
-运行时里的 `CoolString` 对象本体走 GC 堆，而其字符缓冲区走 raw 分配，就是为了把对象生命周期和外部字节数组区分开。
+The `CoolString` object body in the runtime is allocated on the GC heap, while its character buffer uses raw allocation. This separates object lifetime from external byte arrays.
 
-#### 3.4.7 触发策略与阈值
+#### 3.4.7 Trigger Policy and Thresholds
 
-GC 初始化后默认阈值为 `64 KiB`。每次受管分配完成后，如果 `total_managed_bytes` 达到阈值，就会尝试推进一次增量 GC。
+After initialization, the default GC threshold is `64 KiB`. After each managed allocation, if `total_managed_bytes` reaches the threshold, the collector attempts one incremental step.
 
-每轮完整回收结束后，阈值会更新为：
+After each full collection round, the threshold is updated to:
 
 - `max(64 KiB, live_managed_bytes * 2)`
 
-这种策略比较简单，目标是让阈值随存活集规模自适应增长，避免对象较多时过于频繁地触发 GC。
+This simple policy lets the threshold grow with the live set size and avoids overly frequent GC when many objects survive.
 
-#### 3.4.8 与运行时的集成方式
+#### 3.4.8 Runtime Integration
 
-`lib/runtime/` 现在不再直接编译 GC 源码，而是只包含对 `lib/gc/` 的依赖：
+`lib/runtime/` no longer compiles GC sources directly. It only depends on `lib/gc/`:
 
-- 构建期由 `make gc-lib` 先生成 `libcoolgc.a`
-- `runtime-lib` 再链接该静态库
+- `make gc-lib` builds `libcoolgc.a`
+- `runtime-lib` then links that static library
 
-同时，`gc.h` 还导出了 `malloc` / `calloc` / `free` 包装函数。这样生成的 LLVM IR 仍然可以调用标准 C 分配符号，但最终会落到 GC 实现上。  
-为了避免 GC 专项测试拦截宿主 C 运行时分配，`tests/gc` 使用 `libcoolgc_test.a`，其构建时会定义 `COOL_GC_NO_MALLOC_WRAPPERS`，只暴露显式 GC API，不覆盖全局 `malloc/free`。
+`gc.h` also exports wrapper functions for `malloc` / `calloc` / `free`. This lets generated LLVM IR keep calling standard C allocation symbols while finally landing in the GC implementation.
+To prevent GC-specific tests from intercepting host C runtime allocation, `tests/gc` uses `libcoolgc_test.a`, which is built with `COOL_GC_NO_MALLOC_WRAPPERS` and exposes only explicit GC APIs without overriding global `malloc/free`.
 
-#### 3.4.9 当前限制
+#### 3.4.9 Current Limitations
 
-当前实现仍然有一些刻意保留的限制：
+The implementation intentionally keeps several limitations:
 
-- 非移动式，不做压缩整理
-- 非分代式，所有对象位于同一受管堆链表
-- 单线程设计，没有并发 GC
-- 黑堆重扫替代写屏障，简单但性能上不算激进
-- 栈扫描是保守扫描，可能产生误保活
+- Non-moving, with no compaction
+- Non-generational, with all objects in one managed heap list
+- Single-threaded, with no concurrent GC
+- Black-heap rescanning instead of write barriers, simple but not performance-aggressive
+- Conservative stack scanning, which can keep false positives alive
 
-### 3.5 已知约束
+### 3.5 Known Constraints
 
-- `app/Makefile` 明确要求 `llvm-config-16` 在 PATH 中可见。
-- 测试 runner 默认会给被测程序输入 `q\n`，便于退出交互式示例。
-- 运行时库当前生成 Linux 共享库 `libruntime.so`，因此不建议把原生 Windows 作为首选部署平台。
+- `app/Makefile` explicitly requires `llvm-config-16` to be visible in `PATH`.
+- The test runner feeds `q\n` to tested programs by default, which helps exit interactive examples.
+- The runtime library currently builds a Linux shared library, `libruntime.so`, so native Windows is not recommended as the primary deployment platform.

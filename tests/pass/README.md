@@ -1,45 +1,47 @@
 # LLVM Pass Tests
 
-这个目录专门放独立 LLVM Pass 的回归测试，使用 `tests/` 根目录下的通用 golden 测试框架。
+Simplified Chinese version: [README-zh-CN.md](README-zh-CN.md)
 
-## 目录约定
+This directory stores regression tests for standalone LLVM Passes. It uses the common golden test framework under the `tests/` root.
 
-- `cases/*.input.ll`：pass 输入 IR
-- `cases/*.expected.ll`：期望的 pass 文本输出
-- `cases/*.actual.ll`：测试运行时生成的实际输出
-- `cases/*.expected.txt`：变换后程序标准输出的期望结果
-- `cases/*.config`：当前 case 对应的 pass 插件和 pipeline 配置
-- `Makefile`：构建 pass 插件并调用公共测试 runner
+## Directory Conventions
 
-## 运行方式
+- `cases/*.input.ll`: input IR for a pass
+- `cases/*.expected.ll`: expected textual pass output
+- `cases/*.actual.ll`: actual output generated during a test run
+- `cases/*.expected.txt`: expected standard output from the transformed program
+- `cases/*.config`: pass plugin and pipeline configuration for the current case
+- `Makefile`: builds pass plugins and invokes the common test runner
 
-在仓库根目录执行：
+## Running Tests
+
+Run this from the repository root:
 
 ```bash
 make test-pass
 ```
 
-或在当前目录执行：
+Or run this in the current directory:
 
 ```bash
 make run
 ```
 
-## 测试机制
+## Test Mechanism
 
-测试会先构建 `passes/*.so`，再按每个 case 自己的 `.config` 使用 `opt` 执行对应 pass，例如：
+Tests first build `passes/*.so`, then use `opt` with each case's own `.config` to run the corresponding pass. For example:
 
 ```bash
 opt -load-pass-plugin ../../passes/libGlobalDeadCodeElimPass.so \
     -passes=global-dead-code-elim -S cases/basic.input.ll -o cases/basic.actual.ll
 ```
 
-随后会继续把 `.actual.ll` 链接成可执行文件并运行，最后同时校验：
+The runner then links `.actual.ll` into an executable and runs it. Finally, it checks both:
 
-- `.expected.ll` 与 `.actual.ll` 的文本内容
-- `.expected.txt` 与程序标准输出
+- Text content of `.expected.ll` and `.actual.ll`
+- `.expected.txt` and program standard output
 
-如果后续新增其他 pass，推荐继续沿用每个 case 一个 `.config` 的方式；配置文件使用简单的 `key=value` 格式，目前支持：
+When adding more passes later, keep using one `.config` per case. The configuration file uses a simple `key=value` format and currently supports:
 
 - `case_plugin=../../passes/libMyAnalysisPass.so`
 - `case_pipeline=function(my-analysis-pass)`

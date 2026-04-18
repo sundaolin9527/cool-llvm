@@ -1,15 +1,17 @@
-# 可执行结果单元测试
+# Executable Result Unit Tests
 
-## 1. 部署
+Simplified Chinese version: [README-zh-CN.md](README-zh-CN.md)
 
-这套测试依赖仓库根目录的编译器和运行时库。开始之前，请先在仓库根目录完成部署：
+## 1. Setup
+
+This test suite depends on the compiler and runtime library from the repository root. Before starting, finish the basic build at the repository root:
 
 ```bash
 make cgen-llvm
 make runtime-lib
 ```
 
-建议环境：
+Recommended environment:
 
 - Linux / WSL
 - GNU Make
@@ -21,53 +23,53 @@ make runtime-lib
 - `app/cgen-llvm`
 - `lib/runtime/libruntime.so`
 
-如果你只想构建本目录的测试 runner：
+If you only want to build the test runner in this directory:
 
 ```bash
 make build
 ```
 
-## 2. 测试
+## 2. Tests
 
-### 2.1 运行全部测试
+### 2.1 Run All Tests
 
-在仓库根目录执行：
+Run this from the repository root:
 
 ```bash
 make test-units
 ```
 
-或在当前目录执行：
+Or run this in the current directory:
 
 ```bash
 make run
 ```
 
-### 2.2 运行指定测试
+### 2.2 Run Selected Tests
 
-在仓库根目录执行：
+Run this from the repository root:
 
 ```bash
 make unit-test example
 make unit-test cells.cl
 ```
 
-在当前目录直接执行：
+Or run the runner directly in this directory:
 
 ```bash
 ./unit_test_runner --filter example
 ```
 
-### 2.3 查看测试列表或调试命令
+### 2.3 List Tests or Debug Commands
 
 ```bash
 ./unit_test_runner --list
 ./unit_test_runner --verbose
 ```
 
-## 3. 测试机制
+## 3. Test Mechanism
 
-当前目录的 `unit_test_runner` 使用 `tests/` 根目录下的通用 golden 测试框架实现，但本 suite 仍然保留“执行产物比对”的工作流。runner 会对每个 `.cl` 用例执行下面三步：
+The `unit_test_runner` in this directory uses the common golden test framework under the `tests/` root, while this suite still keeps the "executable result comparison" workflow. For each `.cl` case, the runner performs these steps:
 
 ```bash
 cd {app_dir} && ../bin/.i686/lexer {input} | ./parser {input} | ./semant {input} | ./cgen-llvm {input}
@@ -75,46 +77,46 @@ clang++ {actual_artifact} -L{runtime_dir} -lruntime -Wl,-rpath,{runtime_dir} -o 
 {executable}
 ```
 
-判定流程：
+Decision flow:
 
-1. 读取 `tests/unit/cases` 中的 `.cl` 输入文件
-2. 生成 LLVM IR，并写回同名 `.actual.ll`
-3. 将 IR 链接成可执行文件
-4. 运行可执行文件，并与 `.expected.txt` 做逐行比较
+1. Read `.cl` input files from `tests/unit/cases`
+2. Generate LLVM IR and write it back to the matching `.actual.ll`
+3. Link the IR into an executable
+4. Run the executable and compare its output line by line with `.expected.txt`
 
-runner 默认向程序标准输入写入 `q\n`，便于退出像 `example.cl` 这样的交互式程序。
+The runner feeds `q\n` to program standard input by default, which helps exit interactive programs such as `example.cl`.
 
-## 4. 文件组织
+## 4. File Layout
 
-每个测试通常由三类文件组成：
+Each test usually consists of three file types:
 
-- `xxx.cl`：输入程序
-- `xxx.actual.ll`：测试过程中生成或更新的 LLVM IR
-- `xxx.expected.txt`：期望输出
+- `xxx.cl`: input program
+- `xxx.actual.ll`: LLVM IR generated during tests
+- `xxx.expected.txt`: expected output
 
-测试用例默认来自 `tests/unit/cases`。
+Test cases are discovered from `tests/unit/cases` by default.
 
-## 5. 公共框架来源
+## 5. Shared Framework Sources
 
-- 共享框架头文件：`tests/golden_test_framework.h`
-- 共享框架实现：`tests/golden_test_framework.cpp`
-- 通用入口：`tests/golden_test_main.cpp`
-- unit suite 包装入口：`tests/unit_test_suite_main.cpp`
+- Shared framework header: `tests/golden_test_framework.h`
+- Shared framework implementation: `tests/golden_test_framework.cpp`
+- Common entry point: `tests/golden_test_main.cpp`
+- Unit suite wrapper entry point: `tests/unit_test_suite_main.cpp`
 
-`tests/unit/Makefile` 只负责提供 unit suite 自己的命令模板和文件后缀。
+`tests/unit/Makefile` only provides the command templates and file suffixes for the unit suite.
 
-## 6. 常用参数
+## 6. Common Options
 
-- `--repo-root <path>`：显式指定仓库根目录
-- `--suite-dir <path>`：suite 根目录
-- `--cases-dir <path>`：指定测试用例目录
-- `--artifacts-dir <path>`：可执行文件输出目录
-- `--prepare-cmd <template>`：自定义 IR 生成命令模板
-- `--prepare-output <stdout|file>`：prepare 命令是输出到标准输出还是直接写文件
-- `--link-cmd <template>`：自定义链接命令模板
-- `--run-cmd <template>`：自定义程序运行命令模板
-- `--program-input <text>`：自定义传给程序的标准输入
-- `--filter <text>`：按关键字过滤测试
-- `--list`：只列出测试，不执行
-- `--verbose`：打印每个测试的实际命令
-- `--help`：显示帮助
+- `--repo-root <path>`: explicitly set the repository root
+- `--suite-dir <path>`: suite root directory
+- `--cases-dir <path>`: test case directory
+- `--artifacts-dir <path>`: executable output directory
+- `--prepare-cmd <template>`: custom IR generation command template
+- `--prepare-output <stdout|file>`: whether the prepare command writes to stdout or directly to a file
+- `--link-cmd <template>`: custom link command template
+- `--run-cmd <template>`: custom program run command template
+- `--program-input <text>`: custom standard input passed to the program
+- `--filter <text>`: filter tests by keyword
+- `--list`: list tests only, without executing them
+- `--verbose`: print the actual command for each test
+- `--help`: display help
