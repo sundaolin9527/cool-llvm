@@ -183,20 +183,6 @@ clang++ ../tests/unit/cases/example.actual.ll \
 ../tests/unit/.artifacts/example
 ```
 
-### 2.10 CI
-
-The repository includes a Gitee Go pipeline configuration at `/.workflow/ci.yml`, currently constrained to Ubuntu 20.04 and LLVM 16.0.6.
-
-The default pipeline runs:
-
-- `scripts/ci/install_ubuntu2004_llvm1606.sh`
-- `make all`
-- `make runtime-lib`
-- `make test-units`
-- `make test-pass`
-
-The current configuration uses `shell@agent`, so you need to prepare an Ubuntu 20.04 host group in Gitee Go and replace the `hostGroupID` in `/.workflow/ci.yml` with the actual host group ID.
-
 ## 3. Project Details
 
 ### 3.1 Project Goal
@@ -210,7 +196,6 @@ This is a COOL compiler lab project. Its main goal is to compile COOL programs t
 - `lib/runtime/`: runtime library sources and `libruntime.so`
 - `lib/gc/`: GC core algorithm sources, GC-specific Makefile, and static library artifacts
 - `passes/`: LLVM 16 Pass plugin sources and standalone build scripts
-- `scripts/ci/`: Gitee CI dependency installation and build/test scripts
 - `tests/gc/`: GC-specific tests and GC test Makefile
 - `tests/unit/`: executable-result golden tests
 - `tests/unit/cases/`: the 19 executable COOL golden cases currently maintained

@@ -181,20 +181,6 @@ clang++ ../tests/unit/cases/example.actual.ll \
 ../tests/unit/.artifacts/example
 ```
 
-### 2.10 CI
-
-仓库已经提供 Gitee Go 流水线配置 `/.workflow/ci.yml`，当前按 Ubuntu 20.04 + LLVM 16.0.6 约束执行。
-
-默认流水线会调用：
-
-- `scripts/ci/install_ubuntu2004_llvm1606.sh`
-- `make all`
-- `make runtime-lib`
-- `make test-units`
-- `make test-pass`
-
-当前配置使用 `shell@agent`，因此需要在 Gitee Go 中准备一个 Ubuntu 20.04 主机组，并把 `/.workflow/ci.yml` 里的 `hostGroupID` 改成你实际的主机组 ID。
-
 ## 3. 项目细节
 
 ### 3.1 项目目标
@@ -208,7 +194,6 @@ clang++ ../tests/unit/cases/example.actual.ll \
 - `lib/runtime/`：运行时库源码与 `libruntime.so`
 - `lib/gc/`：GC 核心算法源码、GC 专属 Makefile 与静态库产物
 - `passes/`：LLVM 16 Pass 插件源码与独立构建脚本
-- `scripts/ci/`：Gitee CI 依赖安装与构建测试脚本
 - `tests/gc/`：GC 专项测试与 GC 测试专属 Makefile
 - `tests/unit/`：可执行结果 golden tests
 - `tests/unit/cases/`：当前实际维护的 19 个可执行 COOL golden case
